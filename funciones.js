@@ -1808,8 +1808,6 @@ window.manageShedAnimals = async (farm, number) => {
 
 async function prepareInboundAnimalModal() {
     const select = document.getElementById('inboundAnimalProduct');
-    const container = document.getElementById('dynamicFieldsContainer');
-    const trigger = document.getElementById('chkAddCustomField');
     const form = document.getElementById('formInboundAnimal');
     
     // Reiniciar formulario
@@ -1817,10 +1815,6 @@ async function prepareInboundAnimalModal() {
     delete form.dataset.mode;
     delete form.dataset.oldUnits;
     delete form.dataset.oldWeight;
-
-    container.innerHTML = "";
-    trigger.checked = false;
-    document.getElementById('nextFieldTrigger').classList.remove('hidden');
     document.getElementById('animalStockDisplay').classList.add('hidden');
     document.getElementById('inboundAnimalTotalWeight').textContent = "0";
 
@@ -1844,68 +1838,12 @@ async function prepareInboundAnimalModal() {
     document.getElementById('inboundAnimalUnitsQty').oninput = updateDisplay;
     document.getElementById('inboundAnimalWeightQty').oninput = updateDisplay;
     select.onchange = updateDisplay;
-
-    // Manejo de campos infinitos
-    trigger.onclick = function() {
-        if (this.checked) {
-            addInboundCustomField();
-            this.closest('#nextFieldTrigger').classList.add('hidden'); // Ocultar el trigger actual
-        }
-    };
-}
-
-function addInboundCustomField() {
-    const container = document.getElementById('dynamicFieldsContainer');
-    const fieldId = Date.now();
     
-    const fieldGroup = document.createElement('div');
-    fieldGroup.className = 'custom-field-group';
-    fieldGroup.style = "margin-bottom: 10px; border-left: 3px solid #0984e3; padding-left: 10px;";
-    fieldGroup.innerHTML = `
-        <div style="display: flex; gap: 10px; margin-bottom: 8px; align-items: center;">
-            <input type="text" placeholder="Nombre" class="custom-field-name" style="margin:0; flex: 2;">
-            <input type="number" placeholder="KG" class="custom-field-value" style="margin:0; flex: 1;" step="any">
-            <button type="button" class="btn-cancel" style="width: auto; padding: 5px 10px; margin:0; height: 38px;" onclick="removeInboundCustomField(this)">×</button>
-        </div>
-        <div class="next-trigger" style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="chk_${fieldId}" style="width: auto; margin: 0;">
-            <label for="chk_${fieldId}" style="margin: 0; font-size: 12px; color: #636e72; cursor: pointer;">Agregar campo de producción</label>
-        </div>
-    `;
-
-    container.appendChild(fieldGroup);
-
-    // Listener para el valor numérico
-    fieldGroup.querySelector('.custom-field-value').oninput = calculateAnimalInboundTotals;
-
-    // Listener para el nuevo checkbox "infinito"
-    fieldGroup.querySelector('input[type="checkbox"]').onclick = function() {
-        if (this.checked) {
-            addInboundCustomField();
-            this.closest('.next-trigger').classList.add('hidden');
-        }
-    };
+    // Listener para los 5 campos estáticos
+    ['fieldPechuga', 'fieldPernil', 'fieldAla', 'fieldHueso', 'fieldEntero'].forEach(id => {
+        document.getElementById(id).oninput = updateDisplay;
+    });
 }
-
-// Función para eliminar campos y restaurar visibilidad de disparadores
-window.removeInboundCustomField = (btn) => {
-    const group = btn.closest('.custom-field-group');
-    group.remove();
-    calculateAnimalInboundTotals();
-
-    const container = document.getElementById('dynamicFieldsContainer');
-    const groups = container.querySelectorAll('.custom-field-group');
-
-    if (groups.length === 0) {
-        // Si no quedan campos, mostrar el disparador principal
-        document.getElementById('nextFieldTrigger').classList.remove('hidden');
-        document.getElementById('chkAddCustomField').checked = false;
-    } else {
-        // Si quedan campos, mostrar el disparador del último grupo actual
-        groups[groups.length - 1].querySelector('.next-trigger').classList.remove('hidden');
-        groups[groups.length - 1].querySelector('input[type="checkbox"]').checked = false;
-    }
-};
 
 function calculateAnimalInboundTotals() {
     const select = document.getElementById('inboundAnimalProduct');
@@ -1925,13 +1863,14 @@ function calculateAnimalInboundTotals() {
     const oldUnits = isEdit ? parseFloat(form.dataset.oldUnits) || 0 : 0;
     const oldWeight = isEdit ? parseFloat(form.dataset.oldWeight) || 0 : 0;
 
-    // Sumar campos dinámicos
-    let dynamicWeight = 0;
-    document.querySelectorAll('.custom-field-value').forEach(input => {
-        dynamicWeight += parseFloat(input.value) || 0;
-    });
+    // Sumar campos estáticos de producción
+    const pPechuga = parseFloat(document.getElementById('fieldPechuga').value) || 0;
+    const pPernil = parseFloat(document.getElementById('fieldPernil').value) || 0;
+    const pAla = parseFloat(document.getElementById('fieldAla').value) || 0;
+    const pHueso = parseFloat(document.getElementById('fieldHueso').value) || 0;
+    const pEntero = parseFloat(document.getElementById('fieldEntero').value) || 0;
 
-    const totalWeight = dynamicWeight;
+    const totalWeight = pPechuga + pPernil + pAla + pHueso + pEntero;
     const merma = initialWeight - totalWeight;
 
     // Cálculo de Disponibilidad Real (Mermando en tiempo real del stock global)
@@ -1976,12 +1915,14 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
     const units = parseFloat(document.getElementById('inboundAnimalUnitsQty').value) || 0;
     const initialWeight = parseFloat(document.getElementById('inboundAnimalWeightQty').value) || 0;
 
-    // Re-calcular dinámicos para el envío
-    let dynamicWeight = 0;
-    document.querySelectorAll('.custom-field-value').forEach(input => {
-        dynamicWeight += parseFloat(input.value) || 0;
-    });
-    const totalWeight = dynamicWeight;
+    // Re-calcular totales estáticos para el envío
+    const pPechuga = parseFloat(document.getElementById('fieldPechuga').value) || 0;
+    const pPernil = parseFloat(document.getElementById('fieldPernil').value) || 0;
+    const pAla = parseFloat(document.getElementById('fieldAla').value) || 0;
+    const pHueso = parseFloat(document.getElementById('fieldHueso').value) || 0;
+    const pEntero = parseFloat(document.getElementById('fieldEntero').value) || 0;
+
+    const totalWeight = pPechuga + pPernil + pAla + pHueso + pEntero;
     const merma = initialWeight - totalWeight;
 
     const modalManage = document.getElementById('modalManageShedAnimals');
@@ -2025,7 +1966,7 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
         farm: farm,
         medit: "KG",
         shed: String(shedNumber),
-        description: `Ingreso a Galpón ${shedNumber}. Merma: ${merma} KG.`,
+        description: `Ingreso a Galpón ${shedNumber}. Prod: Pechuga(${pPechuga}), Pernil(${pPernil}), Ala(${pAla}), Hueso(${pHueso}), Entero(${pEntero}). Merma: ${merma} KG.`,
         created_at: getColombiaTimestamp()
     }]);
 
