@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facturación - Granjas la provincia</title>
+    <link rel="stylesheet" href="facturacion.css">
+    <!-- Carga de Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Generación de PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+    <div id="facturacionWorkspace">
+        <nav class="status-bar">
+            <div style="display: flex; align-items: center;">
+                <div class="nav-brand">Facturación v1.0</div>
+            </div>
+            <div class="nav-actions">
+                <button id="btnFacturacion" class="nav-btn">Facturación</button>
+                <button id="btnFacturas" class="nav-btn">Facturas</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <button onclick="window.location.href='../index.html'" class="nav-btn btn-cancel" style="margin: 0; padding: 5px 12px; font-size: 12px;">Volver al Inicio</button>
+            </div>
+        </nav>
+
+        <main class="content-area">
+            <!-- Mensaje de bienvenida -->
+            <div id="welcomeFacturacion" style="text-align: center; margin-top: 100px; color: #636e72;">
+                <h3>Seleccione la seccion de facturación</h3>
+            </div>
+
+            <section id="ventasView" class="view-section hidden">
+                <!-- Selector de Modo de Facturación (FASE 10.1) -->
+                <div style="display: flex; justify-content: center; gap: 20px; margin-bottom: 20px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: bold; color: #2d3436;">
+                        <input type="radio" name="billingMode" value="venta" checked onchange="setBillingMode('venta')"> Venta
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: bold; color: #2d3436;">
+                        <input type="radio" name="billingMode" value="compra" onchange="setBillingMode('compra')"> Compra
+                    </label>
+                </div>
+
+                <div class="sales-layout">
+                    <div class="sales-column">
+                        <div id="leftSalesModal" class="sales-modal">
+                            <!-- Paso 0: Selección de Granja -->
+                            <div id="salesStep0">
+                                <h4 id="step0Title">Selección de Granja de Origen</h4>
+                                <div class="search-group">
+                                    <label id="step0Label">Seleccione la granja desde la cual saldrá el producto:</label>
+                                    <select id="salesFarmSelect" onchange="goToStep1()">
+                                        <option value="" disabled selected hidden>Seleccione granja...</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Paso 1: Selección de Cliente -->
+                            <div id="salesStep1" class="hidden">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                    <h4 id="step1Title">Identificación del Cliente</h4>
+                                    <button type="button" id="btnBackStep0" class="btn-cancel" style="width: auto; padding: 5px 10px;" onclick="backToStep0()">Cambiar Granja</button>
+                                </div>
+                                <div class="client-actions">
+                                    <div class="search-group" style="display: flex; gap: 10px; align-items: flex-end; position: relative;">
+                                        <div style="flex: 1;">
+                                            <label id="searchEntityLabel">Buscar Cliente Registrado:</label>
+                                            <input type="text" id="searchExistingEntity" placeholder="Nombre o identificación...">
+                                        </div>
+                                        <div style="display: flex; gap: 5px;">
+                                            <button type="button" id="btnSearchEntity" class="action-btn" style="margin: 0; padding: 12px; height: 43px;">Buscar</button>
+                                            <button type="button" id="btnShowAllEntities" class="action-btn" style="margin: 0; padding: 12px; height: 43px; background: #0984e3;" onclick="showAllEntities()">Ver Todos</button>
+                                        </div>
+                                        <div id="entitySearchResults" class="search-results hidden"></div>
+                                    </div>
+                                    
+                                    <div class="new-client-section">
+                                        <label id="newEntityLabel" class="section-label">Registrar Nuevo Cliente</label>
+                                        
+                                        <!-- Botones para Clientes -->
+                                        <div id="newClientButtons" style="display: flex; gap: 10px; margin-bottom: 15px;">
+                                            <button type="button" class="action-btn" style="flex: 1; margin: 0;" onclick="prepareNewClientSale('persona')">Persona</button>
+                                            <button type="button" class="action-btn" style="flex: 1; margin: 0;" onclick="prepareNewClientSale('negocio')">Negocio</button>
+                                        </div>
+
+                                        <!-- Lista de Proveedores Seleccionados (FASE 10.2) -->
+                                        <div id="selectedProvidersList" class="hidden" style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;"></div>
+                                        <button type="button" id="btnContinueToProducts" class="hidden" style="margin-top: 15px; background: #00b894; margin-bottom: 15px;" onclick="goToStep2()">Continuar a Productos</button>
+
+                                        <!-- Botón para Proveedor -->
+                                        <div id="newSupplierButtons" class="hidden" style="margin-bottom: 15px;">
+                                            <button type="button" class="action-btn" style="width: 100%; margin: 0;" onclick="showModal('modalCreateSupplier')">Registrar Nuevo Proveedor</button>
+                                        </div>
+
+                                        <form id="newClientSaleForm" class="hidden">
+                                            <input type="text" id="saleClientName" placeholder="Nombre / Razón Social">
+                                            <input type="number" id="saleClientCedula" placeholder="Cédula" class="hidden">
+                                            <input type="number" id="saleClientNit" placeholder="Nit" class="hidden">
+                                            <input type="number" id="saleClientPhone" placeholder="Celular">
+                                            <input type="text" id="saleClientAddress" placeholder="Dirección">
+                                            <input type="email" id="saleClientEmail" placeholder="Correo electrónico">
+                                            <button type="button" onclick="handleNewClientAndContinue()">Registrar y Continuar</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Paso 2: Selección de Productos -->
+                            <div id="salesStep2" class="hidden">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                    <h4 id="step2Title">Selección de Productos</h4>
+                                    <button type="button" id="btnBackStep1" class="btn-cancel" style="width: auto; padding: 5px 10px;" onclick="backToStep1()">Cambiar Cliente</button>
+                                </div>
+                                
+                                <div id="selectedEntityBadge" class="client-badge"></div>
+
+                                <div id="newProductPurchaseButton" class="hidden" style="margin-bottom: 15px;">
+                                    <button type="button" class="action-btn" style="width: 100%; margin: 0; background: #0984e3;" onclick="showModal('modalCreateProduct')">Registrar Nuevo Producto</button>
+                                </div>
+
+                                <div class="search-group">
+                                    <input type="text" id="searchProductSales" placeholder="Buscar por código o nombre del producto...">
+                                </div>
+
+                                <div id="inventorySalesList" class="inventory-sales-grid">
+                                    <!-- Se llena dinámicamente -->
+                                </div>
+
+                                <div style="margin-top: 20px;">
+                                    <button type="button" id="btnSiguientePago" class="hidden" onclick="goToStep3()">Siguiente</button>
+                                </div>
+                            </div>
+
+                            <!-- Paso 3: Pago y Liquidación -->
+                            <div id="salesStep3" class="hidden">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                    <h4>Método de Pago</h4>
+                                    <button type="button" class="btn-cancel" style="width: auto; padding: 5px 10px;" onclick="goToStep2()">Volver a Productos</button>
+                                </div>
+                                
+                                <label style="font-size: 13px; color: #636e72;">Seleccione el método de pago:</label>
+                                <select id="paymentMethod" onchange="togglePaymentInputs()">
+                                    <option value="" disabled selected hidden>Seleccione método de pago</option>
+                                    <option value="Transferencia">Transferencia</option>
+                                    <option value="Efectivo">Efectivo</option>
+                                </select>
+
+                                <div id="cashPaymentGroup" class="hidden" style="margin-top: 20px;">
+                                    <label id="cashReceivedLabel" style="font-size: 13px; color: #636e72;">Efectivo Recibido:</label>
+                                    <input type="text" id="cashReceivedInput" placeholder="$ 0" oninput="calculateChange()">
+                                    <div id="changeResult" style="margin-top: 15px; font-weight: bold; color: #2d3436; font-size: 16px;"></div>
+                                </div>
+
+                                <button type="button" id="btnLiquidarVenta" style="margin-top: 30px;" onclick="liquidarVenta()">Liquidar Venta</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="sales-column">
+                        <div id="rightSalesModal" class="sales-modal">
+                            <h4 id="rightPanelTitle">Detalle de la Venta</h4>
+                            <div id="saleFarmBadge" class="client-badge" style="background: #f1f3f5; color: #2d3436; border-color: #dfe6e9; margin-bottom: 10px;">Granja: No seleccionada</div>
+                            <div id="salesCartContainer">
+                                <table class="cart-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Cod.</th>
+                                            <th>Producto</th>
+                                            <th id="cartProviderHeader" class="hidden">Proveedor</th>
+                                            <th>Cant.</th>
+                                            <th>Precio</th>
+                                            <th>Total</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cartItemsBody">
+                                        <tr><td colspan="5" style="text-align:center; padding: 20px; color: #b2bec3;">No hay productos agregados</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="cart-summary">
+                                <div id="paymentMethodBadge" class="client-badge hidden" style="background: #e1f5f1; color: #00b894; border-color: #00b894; margin-bottom: 15px; text-align: center;">Pago: -</div>
+                                <div class="total-row">Total: <span id="cartTotalValue">$ 0</span></div>
+                                <div id="saleReceivedRow" class="total-row hidden" style="font-size: 16px; color: #636e72; margin-top: -5px;"><span id="saleReceivedRowLabel">Monto recibido:</span> <span id="saleReceivedValue">$ 0</span></div>
+                                <div id="saleChangeRow" class="total-row hidden" style="font-size: 16px; color: #00b894; margin-top: 5px;">Cambio: <span id="saleChangeValue">$ 0</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="facturasView" class="view-section hidden">
+                <div class="view-header">
+                    <h3>Facturas Generadas</h3>
+                    <div class="action-bar" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button class="action-btn" style="background: #0984e3;" onclick="prepareFacturasView('ventas')">Ver Ventas</button>
+                        <button class="action-btn" style="background: #6c5ce7;" onclick="prepareFacturasView('compras')">Ver Compras</button>
+                    </div>
+                </div>
+
+                <!-- Barra de Filtros (FASE 10.2) -->
+                <div id="facturasFilterBar" class="hidden" style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; align-items: flex-end;">
+                        <div>
+                            <label style="font-size: 12px; color: #636e72;">Fecha Inicio:</label>
+                            <input type="date" id="filterDateStart" class="sales-modal input" style="margin-bottom: 0;">
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; color: #636e72;">Fecha Fin:</label>
+                            <input type="date" id="filterDateEnd" class="sales-modal input" style="margin-bottom: 0;">
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; color: #636e72;">Producto:</label>
+                            <select id="filterProduct" class="sales-modal select" style="margin-bottom: 0;">
+                                <option value="" disabled selected hidden>Seleccione producto...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; color: #636e72;">Categoría:</label>
+                            <select id="filterCategory" class="sales-modal select" style="margin-bottom: 0;">
+                                <option value="" disabled selected hidden>Seleccione categoría...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <button class="action-btn" style="margin: 0; background: #2d3436; width: 100%; height: 43px;" onclick="loadFacturas(currentFacturasType, true)">Ver Todo</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="facturasFilterIndicator" style="margin-bottom: 15px; font-weight: bold; color: #2d3436; font-size: 14px;">
+                    Mostrando: <span id="currentFacturasType">Ventas</span>
+                </div>
+                <div id="facturasTableContainer" class="table-container"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modales de Facturación -->
+    <div id="modalOverlay" class="modal-overlay hidden">
+        <div id="modalCreateClient" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4>Registrar Cliente</h4>
+            <div id="clientTypeSelector" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <button type="button" class="action-btn" style="flex: 1; margin: 0;" onclick="showClientForm('persona')">Personas</button>
+                <button type="button" class="action-btn" style="flex: 1; margin: 0;" onclick="showClientForm('negocio')">Negocios</button>
+            </div>
+            
+            <form id="formCreateClient" class="hidden" autocomplete="off">
+                <input type="hidden" id="clientType">
+                <input type="text" id="clientName" placeholder="Nombre / Razon Social" required>
+                <input type="number" id="clientCedula" placeholder="Cédula" class="hidden">
+                <input type="number" id="clientNit" placeholder="Nit" class="hidden">
+                <input type="number" id="clientPhone" placeholder="Celular" required>
+                <input type="text" id="clientAddress" placeholder="Dirección" required>
+                <input type="email" id="clientEmail" placeholder="Correo electrónico" required>
+                <div class="modal-btns">
+                    <button type="submit">Guardar Cliente</button>
+                    <button type="button" class="btn-cancel" onclick="resetClientModal()">Volver</button>
+                </div>
+            </form>
+        </div>
+        <div id="modalAddProductQty" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4>Agregar al Carrito</h4>
+            <div id="qtyProductInfo" style="margin-bottom: 15px; font-size: 14px; color: #2d3436; line-height: 1.5;"></div>
+            <form id="formAddQty" autocomplete="off">
+                <label id="qtyLabel" style="font-size: 12px; color: #636e72;">Cantidad:</label>
+                <input type="number" id="saleQtyInput" min="0.01" step="any" required placeholder="0">
+                <div id="itemProviderContainer" class="hidden" style="margin-top: 10px;">
+                    <label style="font-size: 12px; color: #636e72;">Seleccione el Proveedor:</label>
+                    <select id="itemProviderSelect">
+                        <option value="" disabled selected hidden>Seleccione el proveedor</option>
+                    </select>
+                </div>
+                <div id="priceEditContainer" class="hidden" style="margin-top: 10px;">
+                    <label style="font-size: 12px; color: #636e72;">Precio de Compra:</label>
+                    <input type="text" id="unitPriceInput" placeholder="$ 0">
+                </div>
+                <div class="modal-btns">
+                    <button type="submit">Agregar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Modal Detalle de Factura (FASE 10.2) -->
+        <div id="modalViewDetail" class="modal hidden" style="width: 600px;">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4 id="detailModalTitle">Detalle de Documento</h4>
+            <div id="detailModalInfo" style="margin-bottom: 20px; font-size: 14px; line-height: 1.6;"></div>
+            <div class="table-container" style="max-height: 300px; overflow-y: auto;">
+                <table id="detailModalTable">
+                    <!-- Se llena dinámicamente -->
+                </table>
+            </div>
+        </div>
+
+        <!-- Modal Seleccionar Entidad (Ver Todos) -->
+        <div id="modalSelectEntity" class="modal hidden" style="width: 650px;">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4 id="selectEntityModalTitle">Seleccionar</h4>
+            <div id="selectEntityListContainer" class="table-container" style="max-height: 400px; overflow-y: auto;"></div>
+        </div>
+
+        <!-- Registrar Proveedor (Copiado de App Base) -->
+        <div id="modalCreateSupplier" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4>Nuevo Proveedor</h4>
+            <form id="formCreateSupplier" autocomplete="off">
+                <input type="text" id="supName" placeholder="Nombre del proveedor" required>
+                <input type="number" id="supNit" placeholder="Nit" required>
+                <label style="font-size: 12px; color: #636e72; display: block; margin-bottom: 5px;">Productos (mantén Ctrl para seleccionar varios):</label>
+                <select id="supProducts" multiple required style="height: 100px;"></select>
+                <div class="modal-btns">
+                    <button type="submit">Guardar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Agregar Producto (Copiado de App Base) -->
+        <div id="modalCreateProduct" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4>Nuevo Producto</h4>
+            <form id="formCreateProduct" autocomplete="off">
+                <select id="prodCategory" required><option value="">Seleccione Categoría...</option></select>
+                <input type="text" id="prodCode" placeholder="Código (Automático)" readonly style="background: #f1f3f5; cursor: not-allowed;">
+                <input type="text" id="prodName" placeholder="Nombre del producto" required>
+                <label style="font-size: 12px; color: #636e72;">Medidas:</label>
+                <select id="prodMedit" required>
+                    <option value="" disabled selected hidden>Seleccione medida...</option>
+                    <option value="Kg">Kg</option><option value="Bulto">Bulto</option><option value="Litro">Litro</option>
+                    <option value="Cria">Cria</option><option value="Libra">Libra</option><option value="Unidad">Unidad</option>
+                </select>
+                <input type="number" id="prodUnit" placeholder="Unidad" step="any" required>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="prodBuyPrice" placeholder="Precio compra" required style="flex:1;">
+                    <input type="text" id="prodSalePrice" placeholder="Precio venta" required style="flex:1;">
+                </div>
+                <div class="modal-btns">
+                    <button type="submit">Guardar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="facturacion.js"></script>
+</body>
+</html>

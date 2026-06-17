@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kardex la provincia</title>
+    <link rel="stylesheet" href="kardex.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="kardex-container">
+        <header class="kardex-header">
+            <h2>kardex</h2>
+        </header>
+
+        <div class="filter-section">
+            <label for="farmSelect">Filtrar por Granja:</label>
+            <select id="farmSelect">
+                <option value="">-- Todas las granjas --</option>
+            </select>
+
+            <label for="productSelect">Seleccione Producto:</label>
+            <select id="productSelect">
+                <option value="">Cargando productos...</option>
+            </select>
+        </div>
+
+        <div class="table-container">
+            <table id="kardexTable">
+                <thead>
+                    <tr>
+                        <th>Fecha Movimiento</th>
+                        <th>Granja</th>
+                        <th>Detalle</th>
+                        <th>Justificación</th>
+                        <th>Entradas</th>
+                        <th>Salidas</th>
+                        <th>Saldo Existencias</th>
+                    </tr>
+                </thead>
+                <tbody id="kardexBody">
+                    <tr><td colspan="7" style="text-align:center;">Seleccione un producto para ver sus movimientos</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Contenedor para notificaciones temporales -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="kardex.js"></script>
+</body>
+</html>

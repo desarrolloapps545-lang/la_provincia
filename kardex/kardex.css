@@ -1,0 +1,90 @@
+body {
+    font-family: 'Segoe UI', Roboto, sans-serif;
+    background-color: #f4f7f6;
+    margin: 0;
+    padding: 20px;
+    color: #2d3436;
+}
+
+.kardex-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+}
+
+.kardex-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 30px;
+    border-bottom: 2px solid #00b894;
+    padding-bottom: 10px;
+}
+
+.filter-section {
+    margin-bottom: 25px;
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+}
+
+.filter-section select {
+    padding: 10px;
+    width: 300px;
+    border-radius: 5px;
+    border: 1px solid #dfe6e9;
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+th {
+    background-color: #2d3436;
+    color: white;
+    text-align: left;
+    padding: 12px;
+}
+
+td {
+    padding: 12px;
+    border-bottom: 1px solid #eee;
+}
+
+tr:hover {
+    background-color: #f1f3f5;
+}
+
+.text-ingreso { color: #00b894; font-weight: bold; }
+.text-salida { color: #d63031; font-weight: bold; }
+.text-saldo { font-weight: bold; color: #2d3436; }
+
+/* Ingeniería de Interfaz: Sistema de Notificaciones Toast */
+.toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+}
+
+.toast {
+    background: #2d3436;
+    color: white;
+    padding: 12px 25px;
+    border-radius: 8px;
+    margin-top: 10px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    animation: slideIn 0.3s ease-out, fadeOut 0.5s ease-in 2.5s forwards;
+    font-size: 14px;
+}
+@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }

@@ -1,0 +1,259 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f4f7f6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.login-container {
+    width: 100%;
+    max-width: 400px;
+    padding: 20px;
+}
+
+.login-card {
+    background: #ffffff;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+}
+
+.login-card h2 {
+    text-align: center;
+    color: #2d3436;
+    margin-bottom: 10px;
+}
+
+.login-card p {
+    text-align: center;
+    color: #636e72;
+    margin-bottom: 30px;
+    font-size: 14px;
+}
+
+.input-group {
+    margin-bottom: 20px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #2d3436;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #dfe6e9;
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.input-group input:focus {
+    border-color: #00b894;
+}
+
+button {
+    width: 100%;
+    padding: 14px;
+    background-color: #00b894;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #00a082;
+}
+
+#authFeedback {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 14px;
+    min-height: 20px;
+}
+
+.error-msg { color: #d63031; }
+.success-msg { color: #00b894; }
+
+/* Estilos para el botón de visibilidad de contraseña */
+.password-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-wrapper input {
+    padding-right: 45px;
+}
+
+.toggle-password {
+    position: absolute;
+    right: 5px;
+    width: 35px !important;
+    height: 35px;
+    padding: 0 !important;
+    background: transparent !important;
+    color: #636e72 !important;
+    border: none;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    z-index: 10;
+}
+
+/* FASE 3.1: Estilos del Workspace */
+.hidden { display: none !important; }
+
+#mainWorkspace {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #f8f9fa;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+}
+
+.status-bar {
+    background-color: #2d3436;
+    color: white;
+    padding: 0 20px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.nav-actions {
+    display: flex; /* Asegura que los botones estén en una fila */
+    overflow-x: auto; /* Habilita el desplazamiento horizontal */
+    white-space: nowrap; /* Evita que los botones salten de línea */
+    flex-grow: 1; /* Permite que ocupe el espacio disponible */
+    /* Opcional: Ocultar la barra de desplazamiento para una estética más limpia */
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+.nav-actions::-webkit-scrollbar { display: none; /* Chrome, Safari, Opera */ }
+
+.nav-btn {
+    background: #00b894;
+    width: auto;
+    padding: 6px 10px;
+    font-size: 12.5px;
+    margin: 0 3px;
+}
+
+.content-area {
+    flex: 1;
+    padding: 30px;
+    overflow-y: auto;
+}
+
+.view-section h3 {
+    margin-bottom: 20px;
+    color: #2d3436;
+    border-bottom: 2px solid #00b894;
+    display: inline-block;
+    padding-bottom: 5px;
+}
+
+/* Estilos de la Tabla Profesional */
+.table-container {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    overflow: hidden;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+thead {
+    background-color: #f1f3f5;
+    color: #4b4b4b;
+}
+
+th, td {
+    padding: 15px 20px;
+    border-bottom: 1px solid #eee;
+}
+
+tr:hover {
+    background-color: #f8f9fa;
+}
+
+.user-info {
+    font-size: 0.9em;
+    color: #00b894;
+    font-weight: bold;
+}
+
+/* FASE 3.2: Estilos de Modales y Acción */
+.view-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.action-btn { background: #2d3436; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 13px; margin-left: 10px; transition: 0.3s; width: auto !important; }
+.action-btn:hover { background: #00b894; }
+
+.modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; justify-content: center; align-items: center; }
+.modal { background: white; padding: 30px; border-radius: 10px; width: 400px; box-shadow: 0 15px 30px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #dfe6e9 transparent; }
+.modal h4 { margin-bottom: 20px; color: #2d3436; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+.modal form input, .modal form select { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 5px; }
+.modal-btns { display: flex; gap: 10px; }
+.btn-cancel { background: #b2bec3 !important; }
+
+/* Estilo para la X de cierre en modales */
+.close-modal {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    background: none !important;
+    border: none;
+    font-size: 24px;
+    color: #636e72;
+    cursor: pointer;
+    width: auto !important;
+    padding: 0 !important;
+    line-height: 1;
+}
+
+/* Ingeniería de Interfaz: Sistema de Notificaciones Toast */
+.toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+}
+
+.toast {
+    background: #2d3436;
+    color: white;
+    padding: 12px 25px;
+    border-radius: 8px;
+    margin-top: 10px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    animation: slideIn 0.3s ease-out, fadeOut 0.5s ease-in 2.5s forwards;
+    font-size: 14px;
+}
+@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
