@@ -63,6 +63,31 @@ body {
     border-color: #00b894;
 }
 
+/* Alineación de campos dinámicos con bultos */
+#dynamicProductionFields .input-group,
+#dynamicProductionFieldsOut .input-group {
+    margin-bottom: 2px !important;
+}
+#dynamicProductionFields .input-group label,
+#dynamicProductionFieldsOut .input-group label {
+    margin-bottom: 3px !important;
+}
+#dynamicProductionFields .input-group input.dynamic-prod-field,
+#dynamicProductionFieldsOut .input-group input.dynamic-prod-field {
+    flex: 1 !important;
+    width: auto !important;
+    min-width: 0;
+    margin-bottom: 0 !important;
+}
+#dynamicProductionFields .input-group input.bultos-input,
+#dynamicProductionFieldsOut .input-group input.bultos-input {
+    width: 85px !important;
+    flex: none !important;
+    padding: 6px 8px !important;
+    height: 32px !important;
+    margin-bottom: 0 !important;
+}
+
 button {
     width: 100%;
     padding: 14px;
@@ -184,6 +209,35 @@ button:hover {
     overflow: hidden;
 }
 
+/* Estilos para tablas dinámicas generadas en modal de galpones */
+#shedAnimalInboundTableBody table, #shedAnimalOutboundTableBody table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #bdbdbd; /* borde externo */
+}
+
+#shedAnimalInboundTableBody table th, #shedAnimalInboundTableBody table td,
+#shedAnimalOutboundTableBody table th, #shedAnimalOutboundTableBody table td {
+    border: 1px solid #bdbdbd; /* borde interno */
+    padding: 8px 10px;
+    vertical-align: middle;
+    text-align: center;
+}
+
+#shedAnimalInboundTableBody table thead tr, #shedAnimalOutboundTableBody table thead tr {
+    background: #f8f9fa;
+}
+
+#shedAnimalInboundTableBody, #shedAnimalOutboundTableBody {
+    padding: 0;
+}
+
+/* Ensure no gaps between tables/groups */
+#shedAnimalInboundTableBody > div, #shedAnimalOutboundTableBody > div {
+    margin: 0;
+    padding: 0;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -235,6 +289,28 @@ tr:hover {
     width: auto !important;
     padding: 0 !important;
     line-height: 1;
+}
+
+/* Overrides para modal de Gestión de Animales: permitir crecer con contenido (sin scroll interno) */
+#modalManageShedAnimals {
+    max-height: none !important;
+    overflow: visible !important;
+}
+#modalManageShedAnimals .table-container {
+    max-height: none !important;
+    overflow: visible !important;
+}
+#modalManageShedAnimals .table-container table {
+    margin: 0;
+}
+
+/* Asegurar que las tablas queden compactas sin espacios entre grupos */
+#shedAnimalInboundTableBody, #shedAnimalOutboundTableBody {
+    padding: 0;
+}
+#shedAnimalInboundTableBody > div, #shedAnimalOutboundTableBody > div {
+    margin: 0;
+    padding: 0;
 }
 
 /* Ingeniería de Interfaz: Sistema de Notificaciones Toast */

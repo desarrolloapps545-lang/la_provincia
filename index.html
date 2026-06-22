@@ -297,7 +297,6 @@
             <form id="formInboundInventory" autocomplete="off">
                 <label style="font-size: 12px; color: #636e72;">Producto:</label>
                 <select id="inboundProduct" required><option value="" disabled selected hidden>Seleccione producto...</option></select>
-                <div style="margin: 5px 0 10px 0; font-size: 13px;"><strong>Categoría:</strong> <span id="inboundCategory" style="color: #00b894;">---</span></div>
                 
                 <div id="inboundExtraFields" class="hidden">
                     <label style="font-size: 12px; color: #636e72;">Granja de destino:</label>
@@ -452,49 +451,34 @@
         </div>
 
         <!-- Gestión de Animales en Galpón (Nuevo Modal) -->
-        <div id="modalManageShedAnimals" class="modal hidden" style="width: 700px; position: relative;">
+        <div id="modalManageShedAnimals" class="modal hidden" style="max-width:95vw; width: auto; position: relative;">
             <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4 id="manageShedAnimalsTitle">Gestión de Animales</h4>
-            <div class="action-bar" style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <div class="action-bar" style="display: flex; gap: 10px; margin-bottom: 20px; align-items:center;">
                 <button class="action-btn" style="background: #00b894;" onclick="showModal('modalInboundAnimal')">Ingresar animales</button>
-                <button class="action-btn" style="background: #d63031;">Sacar animales</button>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <button class="action-btn" style="background: #d63031;" onclick="showModal('modalOutboundAnimal')">Sacar animales</button>
+                    <div id="shedAnimalLabel" style="font-size:13px; color:#2d3436; font-weight:700; padding:6px 10px; background:transparent;"></div>
+                </div>
             </div>
 
             <div style="display: flex; gap: 20px;">
                 <div style="flex: 1;">
                     <h5 style="margin-bottom: 10px; color: #2d3436;">Entrada de animales</h5>
-                    <div class="table-container" style="max-height: 200px; overflow-y: auto;">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Fecha</th>
-                                    <th>Cantidad</th>
-                                    <th>Origen</th>
-                                </tr>
-                            </thead>
-                            <tbody id="shedAnimalInboundTableBody">
-                                <!-- Contenido dinámico de entradas -->
-                                <tr><td colspan="3" style="text-align:center; padding: 15px; color: #b2bec3;">No hay entradas registradas</td></tr>
-                            </tbody>
-                        </table>
+                    <div class="table-container" style="max-height: none; overflow: visible;">
+                        <div id="shedAnimalInboundTableBody">
+                            <!-- Contenido dinámico de entradas -->
+                            <div style="text-align:center; padding: 15px; color: #b2bec3;">No hay entradas registradas</div>
+                        </div>
                     </div>
                 </div>
                 <div style="flex: 1;">
                     <h5 style="margin-bottom: 10px; color: #2d3436;">Salida de animales</h5>
-                    <div class="table-container" style="max-height: 200px; overflow-y: auto;">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Fecha</th>
-                                    <th>Cantidad</th>
-                                    <th>Destino</th>
-                                </tr>
-                            </thead>
-                            <tbody id="shedAnimalOutboundTableBody">
-                                <!-- Contenido dinámico de salidas -->
-                                <tr><td colspan="3" style="text-align:center; padding: 15px; color: #b2bec3;">No hay salidas registradas</td></tr>
-                            </tbody>
-                        </table>
+                    <div class="table-container" style="max-height: none; overflow: visible;">
+                        <div id="shedAnimalOutboundTableBody">
+                            <!-- Contenido dinámico de salidas -->
+                            <div style="text-align:center; padding: 15px; color: #b2bec3;">No hay salidas registradas</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -515,58 +499,141 @@
                         <span>Stock Actual: <b id="currentAnimalUnits">0</b></span>
                         <span>Peso Actual: <b id="currentAnimalWeight">0</b> KG</span>
                     </div>
+                    <div id="currentAnimalDetails" style="margin-top: 10px; text-align: left; display: grid; gap: 6px; font-size: 12px; color: #2d3436;"></div>
                 </div>
 
-                <div style="display: flex; gap: 10px;">
+                <div style="display: flex; gap: 10px; margin-bottom: 0;">
                     <div style="flex: 1;">
                         <label style="font-size: 12px; color: #636e72;">Nro de Unidades:</label>
-                        <input type="number" id="inboundAnimalUnitsQty" placeholder="0" required min="1">
+                        <input type="number" id="inboundAnimalUnitsQty" placeholder="0" required min="1" style="margin-bottom: 8px;">
                     </div>
                     <div style="flex: 1;">
                         <label style="font-size: 12px; color: #636e72;">Peso Inicial (KG):</label>
-                        <input type="number" id="inboundAnimalWeightQty" placeholder="0" required min="0" step="any">
+                        <input type="number" id="inboundAnimalWeightQty" placeholder="0" required min="0" step="any" style="margin-bottom: 8px;">
                     </div>
                 </div>
 
-                <hr style="margin: 10px 0; border: 0; border-top: 1px solid #eee;">
-                
-                <div id="staticProductionFields" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px;">
-                    <div>
-                        <label style="font-size: 11px; color: #636e72;">Pechuga (KG):</label>
-                        <input type="number" id="fieldPechuga" placeholder="0" step="any" style="margin-bottom: 5px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #636e72;">Pernil (KG):</label>
-                        <input type="number" id="fieldPernil" placeholder="0" step="any" style="margin-bottom: 5px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #636e72;">Ala (KG):</label>
-                        <input type="number" id="fieldAla" placeholder="0" step="any" style="margin-bottom: 5px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #636e72;">Hueso (KG):</label>
-                        <input type="number" id="fieldHueso" placeholder="0" step="any" style="margin-bottom: 5px;">
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #636e72;">Entero (KG):</label>
-                        <input type="number" id="fieldEntero" placeholder="0" step="any" style="margin-bottom: 5px;">
-                    </div>
-                </div>
+                <hr style="margin: 2px 0 8px 0; border: 0; border-top: 1px solid #eee;">
 
-                <div style="background: #2d3436; color: white; padding: 15px; border-radius: 8px; margin-top: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 14px; font-weight: bold;">TOTAL PESO REGISTRADO:</span>
-                        <span style="font-size: 18px; font-weight: bold;"><span id="inboundAnimalTotalWeight">0</span> KG</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #4b4b4b; padding-top: 10px;">
-                        <span style="font-size: 14px; font-weight: bold; color: #fab1a0;">MERMA:</span>
-                        <span style="font-size: 18px; font-weight: bold; color: #fab1a0;"><span id="inboundAnimalMerma">0</span> KG</span>
-                    </div>
+                <div id="dynamicProductionFields" style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 0;">
+                    <!-- Los campos configurados se cargarán aquí dinámicamente -->
+                    <p style="font-size: 11px; color: #b2bec3; text-align: center;">Seleccione un animal para cargar sus campos de producción</p>
                 </div>
 
                 <div class="modal-btns" style="margin-top: 20px;">
                     <button type="submit">Confirmar Ingreso</button>
                     <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Configuración de Campos de Producción (Nuevo) -->
+        <div id="modalConfigAnimalFields" class="modal hidden" style="width: 500px;">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4 id="configAnimalTitle" style="color: #2d3436; margin-bottom: 10px;">Configurar Producción</h4>
+            <p style="font-size: 12px; color: #636e72; margin-bottom: 15px;">Defina los campos dinámicos y su comportamiento para cada proceso.</p>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button class="action-btn" id="btnTabIngreso" style="flex: 1; background: #00b894;" onclick="switchConfigTab('ingreso')">Ingreso</button>
+                <button class="action-btn" id="btnTabSalida" style="flex: 1; background: #b2bec3;" onclick="switchConfigTab('salida')">Salida</button>
+            </div>
+            
+            <div id="animalFieldsList" style="margin-bottom: 20px; max-height: 250px; overflow-y: auto; padding-right: 5px;">
+                <!-- Lista de campos actuales -->
+            </div>
+
+            <form id="formAddAnimalField" onsubmit="event.preventDefault(); saveAnimalField();">
+                <div style="background: #f1f3f5; padding: 20px; border-radius: 8px; border: 1px solid #dfe6e9;">
+                    <label style="font-size: 13px; font-weight: bold; color: #2d3436; margin-bottom: 15px; display: block;">Agregar nuevo campo:</label>
+                    
+                    <div style="display: flex; gap: 10px; align-items: flex-end; margin-bottom: 10px;">
+                        <div class="input-group" style="flex: 3; margin-bottom: 0;">
+                            <label style="font-size: 11px; color: #636e72;">Etiqueta:</label>
+                            <input type="text" id="newFieldName" placeholder="Nombre" required style="margin-bottom: 0;">
+                        </div>
+                        
+                        <div class="input-group" style="flex: 2; margin-bottom: 0;">
+                            <label style="font-size: 11px; color: #636e72;">Operación:</label>
+                            <select id="newFieldOp" required style="margin-bottom: 0;">
+                                <option value="sum">Suma</option>
+                                <option value="sub">Resta</option>
+                                <option value="formula_sum">Sumatoria</option>
+                                <option value="formula_diff">Base - Total</option>
+                                <option value="formula_add">Base + Total</option>
+                                <option value="formula_div">División / Porcentaje</option>
+                                <option value="none">Info</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group" style="flex: 1; margin-bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 10px;">
+                            <label style="font-size: 10px; color: #636e72; margin-bottom: 5px;">Editable</label>
+                            <input type="checkbox" id="newFieldEditable" checked style="width: 20px; height: 20px; margin: 0;">
+                        </div>
+                    </div>
+
+                    <!-- Contenedor de selección posicionado abajo de forma independiente -->
+                    <div id="formulaFieldsContainer" class="hidden" style="margin-bottom: 15px; background: #fff; padding: 10px; border-radius: 5px; border: 1px solid #dfe6e9; width: 100%;">
+                        <div id="adjustmentCheckboxContainer" style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px dashed #dfe6e9; padding-bottom: 8px;">
+                            <input type="checkbox" id="newFieldAllowAdjustment" style="width: auto; margin: 0;">
+                            <label for="newFieldAllowAdjustment" style="margin: 0; font-size: 11px; font-weight: bold; color: #2d3436;">Permitir ajuste manual (Suma/Resta de faltantes)</label>
+                        </div>
+                        
+                        <div id="displayFormatContainer" class="hidden" style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed #dfe6e9;">
+                            <label style="font-size: 11px; color: #636e72; font-weight: bold; display: block; margin-bottom: 5px;">Formato de visualización:</label>
+                            <select id="newFieldDisplayFormat" style="margin-bottom: 0; font-size: 12px; padding: 5px;">
+                                <option value="number">Número Normal (0.00)</option>
+                                <option value="percent">Porcentaje (%)</option>
+                            </select>
+                        </div>
+
+                        <label style="font-size: 11px; color: #636e72; font-weight: bold; display: block; margin-bottom: 5px;">Seleccione los campos para la operación:</label>
+                        <div id="formulaFieldsChecklist" style="max-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
+                    </div>
+                    
+                    <button type="submit" class="action-btn" style="width: 100%; height: 45px; margin-top: 15px;">Añadir campo</button>
+                </div>
+            </form>
+            <div class="modal-btns" style="margin-top: 15px;">
+                <button type="button" class="action-btn" style="width: 100%; background: #2d3436;" onclick="closeModals()">Finalizar Configuración</button>
+            </div>
+        </div>
+
+        <!-- Formulario de Salida de Animales (Nuevo) -->
+        <div id="modalOutboundAnimal" class="modal hidden" style="width: 500px;">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4>Salida de Animales del Galpón</h4>
+            <form id="formOutboundAnimal" autocomplete="off">
+                <label style="font-size: 12px; color: #636e72;">Animal a retirar:</label>
+                <select id="outboundAnimalProduct" required>
+                    <option value="" disabled selected hidden>Cargando animales...</option>
+                </select>
+
+                <div id="batchStockDisplay" class="hidden" style="background: #f1f3f5; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 13px; text-align: center;">
+                    <div style="display: flex; justify-content: center; gap: 30px;">
+                        <span>Unid. en Lote: <b id="currentBatchUnits">0</b></span>
+                        <span>Peso en Lote: <b id="currentBatchWeight">0</b> KG</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-bottom: 0;">
+                    <div style="flex: 1;">
+                        <label style="font-size: 12px; color: #636e72;">Unidades:</label>
+                        <input type="number" id="outboundAnimalUnitsQty" placeholder="0" required min="1" style="margin-bottom: 8px;">
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="font-size: 12px; color: #636e72;">Peso Base (KG):</label>
+                        <input type="number" id="outboundAnimalWeightQty" placeholder="0" required min="0" step="any" style="margin-bottom: 8px;">
+                    </div>
+                </div>
+
+                <hr style="margin: 2px 0 8px 0; border: 0; border-top: 1px solid #eee;">
+
+                <div id="dynamicProductionFieldsOut" style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 0;">
+                    <!-- Campos dinámicos de salida -->
+                </div>
+
+                <div class="modal-btns" style="margin-top: 20px;">
+                    <button type="submit" class="action-btn" style="width: 100%;">Registrar Salida</button>
                 </div>
             </form>
         </div>

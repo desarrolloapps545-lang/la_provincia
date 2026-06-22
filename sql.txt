@@ -1,0 +1,178 @@
+-- Tabla para guardar qué campos tiene cada animal
+CREATE TABLE animal_config (
+  id SERIAL PRIMARY KEY,
+  animal_name TEXT NOT NULL,
+  field_label TEXT NOT NULL,
+  operation TEXT CHECK (operation IN ('sum', 'sub', 'none')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- Agregar columna JSONB a movimientos para guardar los valores dinámicos
+ALTER TABLE movements ADD COLUMN IF NOT EXISTS production_data JSONB DEFAULT '{}'::jsonb;
+
+
+
+
+-- Borrar la tabla anterior si existe para recrearla con la nueva estructura extendida
+DROP TABLE IF EXISTS animal_config;
+
+CREATE TABLE animal_config (
+  id SERIAL PRIMARY KEY,
+  animal_name TEXT NOT NULL,
+  form_type TEXT NOT NULL, -- 'ingreso' o 'salida'
+  field_label TEXT NOT NULL,
+  operation TEXT NOT NULL, -- 'sum', 'sub', 'none', 'formula_sum', 'formula_diff'
+  is_editable BOOLEAN DEFAULT true,
+  formula_fields TEXT DEFAULT NULL, -- Guarda un array JSON con las etiquetas elegidas
+  allow_adjustment BOOLEAN DEFAULT false,
+  display_format TEXT DEFAULT 'number',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 1. Tabla de LOTES (Representa el grupo de animales que vive en un galpón)
+CREATE TABLE animal_batches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  farm_name TEXT NOT NULL, -- Llave foránea lógica a farms
+  shed_number INTEGER NOT NULL, -- Número del galpón
+  animal_product_code TEXT NOT NULL, -- Llave foránea a products(code)
+  status TEXT DEFAULT 'activo', -- 'activo' o 'finalizado'
+  initial_units INTEGER NOT NULL,
+  current_units INTEGER NOT NULL,
+  initial_weight DECIMAL NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  closed_at TIMESTAMP WITH TIME ZONE,
+
+  -- Relaciones (Llaves Foráneas)
+  CONSTRAINT fk_farm FOREIGN KEY (farm_name) REFERENCES farms(name) ON UPDATE CASCADE,
+  CONSTRAINT fk_product FOREIGN KEY (animal_product_code) REFERENCES products(code) ON UPDATE CASCADE
+);
+
+-- 2. Tabla de REGISTROS (Guarda los valores de los campos dinámicos)
+CREATE TABLE animal_production_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  batch_id UUID REFERENCES animal_batches(id) ON DELETE CASCADE,
+  movement_id BIGINT REFERENCES movements(id), -- Relación con el Kardex
+  event_type TEXT NOT NULL, -- 'ingreso', 'salida', 'pesaje'
+  units INTEGER NOT NULL,
+  base_weight DECIMAL NOT NULL, -- El "Peso Inicial" o "Base" que dejaste por código
+  
+  -- La magia dinámica: Aquí se guardan los nombres de campos y valores calculados
+  -- Ej: {"Sumatoria": 450.5, "Merma": 2.1, "Dato Extra": "Normal"}
+  dynamic_values JSONB NOT NULL DEFAULT '{}'::jsonb,
+  
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- ==========================================================
+-- PROPUESTA DE TABLAS PARA MANEJO DINÁMICO DE ANIMALES
+-- ==========================================================
+
+-- 1. Lotes de Animales: Representa la ocupación actual de un galpón.
+-- Cuando se hace un "Ingreso", se crea un lote. Al hacer "Salida", se cierra.
+CREATE TABLE animal_batches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  animal_code NUMERIC NOT NULL, -- Cambiado de TEXT a NUMERIC para coincidir con products.code
+  animal_name TEXT NOT NULL, -- Referencia a products.name
+  farm_name TEXT NOT NULL,   -- Referencia a farms.name
+  shed_number INTEGER NOT NULL, -- Número del galpón
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'closed')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  
+  -- Llaves foráneas para integridad referencial
+  CONSTRAINT fk_animal_code FOREIGN KEY (animal_code) REFERENCES products(code) ON UPDATE CASCADE,
+  CONSTRAINT fk_farm FOREIGN KEY (farm_name) REFERENCES farms(name) ON UPDATE CASCADE
+);
+
+-- 2. Registros de Producción: Guarda cada evento (entrada/salida) con sus datos dinámicos.
+CREATE TABLE animal_production_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  batch_id UUID REFERENCES animal_batches(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL, -- 'ingreso' o 'salida'
+  
+  -- Campos obligatorios por código
+  units INTEGER NOT NULL,
+  initial_weight DECIMAL NOT NULL,
+  
+  -- Campos Dinámicos: Aquí guardamos el JSON con { "Etiqueta": valor } 
+  -- tanto de los inputs manuales como de los resultados de fórmulas.
+  dynamic_data JSONB DEFAULT '{}'::jsonb,
+  
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- ==========================================================
+-- POLÍTICAS DE SEGURIDAD (RLS)
+-- ==========================================================
+
+-- Habilitar RLS en las nuevas tablas
+ALTER TABLE animal_batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE animal_production_records ENABLE ROW LEVEL SECURITY;
+
+-- Políticas para animal_batches
+CREATE POLICY "Permitir lectura de lotes a usuarios autenticados"
+ON public.animal_batches FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Permitir gestión de lotes a Admins y Devs"
+ON public.animal_batches FOR ALL TO authenticated
+USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')))
+WITH CHECK (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')));
+
+-- Políticas para animal_production_records
+CREATE POLICY "Permitir lectura de registros a usuarios autenticados"
+ON public.animal_production_records FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Permitir gestión de registros a Admins y Devs"
+ON public.animal_production_records FOR ALL TO authenticated
+USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')))
+WITH CHECK (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')));
+
+-- ==========================================================
+-- RLS PARA INVENTORY (tabla existente)
+-- ==========================================================
+
+ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Permitir lectura de inventario a usuarios autenticados"
+ON public.inventory FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Permitir inserción de inventario a Admins y Devs"
+ON public.inventory FOR INSERT TO authenticated
+WITH CHECK (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')));
+
+CREATE POLICY "Permitir actualización de inventario a Admins y Devs"
+ON public.inventory FOR UPDATE TO authenticated
+USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')))
+WITH CHECK (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')));
+
+CREATE POLICY "Permitir eliminación de inventario a Admins y Devs"
+ON public.inventory FOR DELETE TO authenticated
+USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')));
+
+-- 3. Tabla de BULTOS: Guarda el número de bultos por campo de producción en cada ingreso/salida
+CREATE TABLE animal_production_bultos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    production_record_id UUID REFERENCES animal_production_records(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    bultos INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- RLS para animal_production_bultos
+ALTER TABLE public.animal_production_bultos ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Permitir lectura de bultos a usuarios autenticados"
+ON public.animal_production_bultos FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Permitir inserción de bultos a Admins y Devs"
+ON public.animal_production_bultos FOR INSERT TO authenticated
+WITH CHECK (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')));
+
+CREATE POLICY "Permitir actualización de bultos a Admins y Devs"
+ON public.animal_production_bultos FOR UPDATE TO authenticated
+USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')))
+WITH CHECK (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')));
+
+CREATE POLICY "Permitir eliminación de bultos a Admins y Devs"
+ON public.animal_production_bultos FOR DELETE TO authenticated
+USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')));

@@ -10,6 +10,9 @@ const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let CURRENT_USER_ROLE = "";
 window.CURRENT_INVENTORY_MODE = "products";
 
+// Variable global para trackear el orden de selección en fórmulas
+let selectedFormulaFields = [];
+
 // Ingeniería de Backend en Frontend: Helper para obtener fecha/hora de Colombia (timestamp sin zona horaria)
 const getColombiaTimestamp = () => {
     return new Intl.DateTimeFormat('sv-SE', {
@@ -28,6 +31,93 @@ const normalizeText = (str) => {
 const formatNumber = (num) => {
     if (num === null || num === undefined) return "0";
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+};
+
+const parseInventoryAmount = (amount) => {
+    if (amount === null || amount === undefined) return { units: 0, kg: 0 };
+    if (typeof amount === 'object') {
+        return {
+            units: Number(amount.units) || 0,
+            kg: Number(amount.kg) || 0
+        };
+    }
+    if (typeof amount === 'string') {
+        try {
+            const parsed = JSON.parse(amount);
+            if (typeof parsed === 'object' && parsed !== null) {
+                return {
+                    units: Number(parsed.units) || 0,
+                    kg: Number(parsed.kg) || 0
+                };
+            }
+        } catch (_) {
+            const parts = amount.split('|').map(part => part.trim());
+            if (parts.length === 2 && !Number.isNaN(Number(parts[0])) && !Number.isNaN(Number(parts[1]))) {
+                return { units: Number(parts[0]), kg: Number(parts[1]) };
+            }
+        }
+    }
+    const numeric = Number(amount);
+    return { units: Number.isNaN(numeric) ? 0 : numeric, kg: 0 };
+};
+
+const formatInventoryAmount = (amount) => {
+    const parsed = parseInventoryAmount(amount);
+    if (parsed.kg !== 0) {
+        return `${formatNumber(parsed.units)} / ${formatNumber(parsed.kg)} KG`;
+    }
+    return formatNumber(parsed.units);
+};
+
+const adjustInventoryAmount = (current, delta, isAdd = true) => {
+    const base = parseInventoryAmount(current);
+    const unitsDelta = Number(delta.units) || 0;
+    const kgDelta = Number(delta.kg) || 0;
+    return {
+        units: base.units + (isAdd ? unitsDelta : -unitsDelta),
+        kg: base.kg + (isAdd ? kgDelta : -kgDelta)
+    };
+};
+
+const getNumericFieldValue = (input) => {
+    if (!input) return 0;
+    const raw = String(input.value || "").replace(/\s+/g, '').replace('%', '').replace(',', '.');
+    const parsed = parseFloat(raw);
+    if (Number.isNaN(parsed)) return 0;
+    return input.dataset.displayFormat === 'percent' ? parsed / 100 : parsed;
+};
+
+const computeFormulaResult = (op, targets, fieldValues) => {
+    const val1 = fieldValues[targets[0]] || 0;
+    const val2 = targets.length === 2 ? (fieldValues[targets[1]] || 0) : 0;
+    const baseValue = fieldValues['Peso Inicial'] || 0;
+
+    if (op === 'formula_sum') {
+        return targets.reduce((sum, label) => sum + (fieldValues[label] || 0), 0);
+    }
+
+    if (op === 'formula_diff') {
+        if (targets.length === 1) {
+            return baseValue - val1;
+        }
+        return val1 - val2;
+    }
+
+    if (op === 'formula_add') {
+        if (targets.length === 1) {
+            return baseValue + val1;
+        }
+        return val1 + val2;
+    }
+
+    if (op === 'formula_div') {
+        if (targets.length === 1) {
+            return baseValue !== 0 ? val1 / baseValue : 0;
+        }
+        return val2 !== 0 ? val1 / val2 : 0;
+    }
+
+    return 0;
 };
 
 // Ingeniería de Sistemas: Generador de código correlativo automático
@@ -71,6 +161,40 @@ const showToast = (message, type = 'success') => {
 document.addEventListener('DOMContentLoaded', async () => {
     // Inicializar listeners para el modal de edición de inventario
     setupEditInventoryListeners();
+    
+    // Listener dinámico para mostrar u ocultar checklist de campos en fórmulas
+    document.getElementById('newFieldOp')?.addEventListener('change', async function() {
+        const op = this.value;
+        selectedFormulaFields = []; // Resetear selección al cambiar operación
+        const container = document.getElementById('formulaFieldsContainer');
+        const adjCheckbox = document.getElementById('newFieldAllowAdjustment');
+        const checklist = document.getElementById('formulaFieldsChecklist');
+        const formatContainer = document.getElementById('displayFormatContainer');
+
+        if (op.startsWith('formula_')) {
+            container.classList.remove('hidden');
+            if(adjCheckbox) adjCheckbox.checked = false;
+            if(formatContainer) formatContainer.classList.toggle('hidden', op !== 'formula_div');
+            
+            const animalName = document.getElementById('modalConfigAnimalFields').dataset.animal;
+            
+            // Ingeniería de Datos: Consultar campos de AMBOS formularios para permitir cruce en División
+            const { data: fields } = await _supabase.from('animal_config').select('field_label, form_type').eq('animal_name', animalName);
+            
+            // Añadir "Peso Inicial" manualmente a las opciones seleccionables
+            const allFields = [{ field_label: 'Peso Inicial' }, ...(fields || [])];
+
+            checklist.innerHTML = allFields.map(f => `
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #2d3436; margin: 0;">
+                    <input type="checkbox" class="formula-checkbox" value="${f.field_label}" style="width: auto; margin: 0;" onchange="handleFormulaFieldClick(this, '${op}')">
+                    ${f.field_label} ${f.form_type ? `<small style="color:#b2bec3;">(${f.form_type})</small>` : ''}
+                </label>
+            `).join('') || '<span style="font-size:11px; color:#b2bec3;">No hay campos previos configurados.</span>';
+        } else {
+            container.classList.add('hidden');
+            checklist.innerHTML = '';
+        }
+    });
 
     // 1. Cargar datos recordados
     const savedEmail = localStorage.getItem('rememberedEmail');
@@ -312,6 +436,7 @@ function showModal(id) {
         }
     }
 
+    if(id === 'modalOutboundAnimal') prepareOutboundAnimalModal();
     if(id === 'modalCreateUser') prepareRoleDropdown();
     if(id === 'modalUpdateData') prepareUpdateFields();
     if(id === 'modalCreateSupplier') loadProductsForSelect(); // Esta línea es correcta, carga productos para proveedores.
@@ -648,14 +773,11 @@ async function prepareInboundModal() {
     const prodSelect = document.getElementById('inboundProduct');
     const extraFields = document.getElementById('inboundExtraFields');
     extraFields.classList.add('hidden');
-    document.getElementById('inboundCategory').textContent = "---";
 
-    // Carga inicial de productos (excluyendo categorías de animales)
-    let { data: prods } = await _supabase.from('products').select('name, unit, medit, code').order('name');
-    // Ya no se filtra por categorías de animales aquí, ya que los productos no tienen categoría
+    // Carga inicial de productos excluyendo aquellos marcados como animales
+    let { data: prods } = await _supabase.from('products').select('name, unit, medit, code, animal').eq('animal', false).order('name');
 
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>' + 
-        // Ahora pasamos 'unit' (valor) y 'medit' (medida)
         prods.map(p => `<option value="${p.name}" data-unit="${p.unit}" data-medit="${p.medit}" data-code="${p.code}">${p.name}</option>`).join('');
 
     const { data: farms } = await _supabase.from('farms').select('name').order('name');
@@ -689,7 +811,6 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
     const unitValue = selected.getAttribute('data-unit'); // Valor por unidad (ej: 50)
     const medit = selected.getAttribute('data-medit'); // Medida (ej: Kg)
 
-    document.getElementById('inboundCategory').textContent = "N/A"; // Ya no hay categoría para mostrar
     document.getElementById('inboundUnit').value = medit; // El campo inboundUnit ahora muestra la medida
     document.getElementById('inboundAvailable').value = formatNumber(unitValue);
     document.getElementById('inboundAvailable').dataset.initial = unitValue;
@@ -745,7 +866,6 @@ document.getElementById('inboundFarm')?.addEventListener('change', async functio
             // categorie: category, // La categoría ya no se guarda en el inventario
             shed: shed || null,
             amount: 0,
-            unit: unit,
             farm: farmName,
             provider: [],
             created_at: getColombiaTimestamp()
@@ -866,7 +986,6 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
         e.target.reset();
         document.getElementById('inboundExtraFields').classList.add('hidden');
         document.getElementById('inboundShedInfo').classList.add('hidden');
-        document.getElementById('inboundCategory').textContent = "---";
         
         closeModals();
         document.getElementById('btnGestionInventario').click();
@@ -883,11 +1002,12 @@ async function prepareOutboundModal() {
     let { data: invItems } = await _supabase.from('inventory').select('product, medit').order('product'); // Items currently in inventory
     // Ya no se filtra por categorías de animales aquí, ya que los productos no tienen categoría
 
-    const { data: productsInfo } = await _supabase.from('products').select('name, medit, unit').order('name'); // All product info
+    const { data: productsInfo } = await _supabase.from('products').select('name, medit, unit, animal').order('name'); // All product info
 
     const meditMap = Object.fromEntries((productsInfo || []).map(p => [p.name, p.medit]));
     const unitMap = Object.fromEntries((productsInfo || []).map(p => [p.name, p.unit])); // Factor de conversión
-    const uniqueInvNames = [...new Set((invItems || []).map(i => i.product))];
+    const animalSet = new Set((productsInfo || []).filter(p => p.animal).map(p => p.name));
+    const uniqueInvNames = [...new Set((invItems || []).map(i => i.product))].filter(name => !animalSet.has(name));
 
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>' + 
         uniqueInvNames.map(name => {
@@ -1261,6 +1381,7 @@ function renderProductsTable(products) {
                         <td>
                             <div style="display:flex; gap:5px;">
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editProduct('${p.code}')">Editar</button>
+                                ${p.animal ? `<button class="action-btn" style="margin:0; padding:5px 10px; background: #6c5ce7;" onclick="openConfigAnimalFields('${p.name}')">Configurar</button>` : ''}
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteProduct('${p.code}')">Borrar</button>
                             </div>
                         </td>
@@ -1353,7 +1474,11 @@ async function loadFilteredInventory(mode) {
     }
 
     let filtered = data || [];
-    // El filtro por categoría de animales se ha eliminado ya que los productos no tienen categorías
+    // No mostrar productos animales en el inventario de productos
+    const { data: animalProducts } = await _supabase.from('products').select('name').eq('animal', true);
+    const animalNames = new Set((animalProducts || []).map(p => p.name));
+    filtered = filtered.filter(item => !animalNames.has(item.product));
+
     if (category && category !== 'all') { // Category filter only for products
         filtered = filtered.filter(item => item.categorie === category);
     }
@@ -1540,7 +1665,7 @@ function renderInventoryTable(items) { // Removed mode parameter as it's always 
                         <td>${item.product || 'Sin nombre'}</td>
                         <td>${item.farm || 'N/A'}</td>
                         <td>${item.medit || 'N/A'}</td>
-                        <td>${formatNumber(item.amount)}</td>
+                        <td>${formatInventoryAmount(item.amount)}</td>
                         <td>${Array.isArray(item.provider) ? item.provider.join(', ') : (item.provider || 'N/A')}</td>
                         <td>
                             <div style="display:flex; gap:5px;">
@@ -1797,11 +1922,289 @@ window.manageShedAnimals = async (farm, number) => {
     const inboundTableBody = document.getElementById('shedAnimalInboundTableBody');
     const outboundTableBody = document.getElementById('shedAnimalOutboundTableBody');
 
-    inboundTableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding: 15px; color: #b2bec3;">No hay entradas registradas</td></tr>';
-    outboundTableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding: 15px; color: #b2bec3;">No hay salidas registradas</td></tr>';
+    inboundTableBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #b2bec3;">Cargando registros...</div>';
+    outboundTableBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #b2bec3;">Cargando registros...</div>';
+
+    await renderShedAnimalRecords(farm, number);
 
     // Mostrar el modal
     showModal('modalManageShedAnimals');
+};
+
+async function renderShedAnimalRecords(farm, number) {
+    const inboundBody = document.getElementById('shedAnimalInboundTableBody');
+    const outboundBody = document.getElementById('shedAnimalOutboundTableBody');
+
+    const { data: batches, error: batchError } = await _supabase
+        .from('animal_batches')
+        .select('id, animal_name, created_at')
+        .eq('farm_name', farm)
+        .eq('shed_number', number)
+        .order('created_at', { ascending: false });
+
+    if (batchError) {
+        inboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #d63031;">Error cargando lotes</div>';
+        outboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #d63031;">Error cargando lotes</div>';
+        return showToast("Error cargando lotes de animales", "error");
+    }
+
+    const batchMap = (batches || []).reduce((map, batch) => {
+        map[batch.id] = batch.animal_name;
+        return map;
+    }, {});
+
+    const batchIds = (batches || []).map(batch => batch.id);
+    if (batchIds.length === 0) {
+        inboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #b2bec3;">No hay entradas registradas</div>';
+        outboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #b2bec3;">No hay salidas registradas</div>';
+        return;
+    }
+
+    const { data: records, error: recordsError } = await _supabase
+        .from('animal_production_records')
+        .select('id, batch_id, event_type, units, initial_weight, dynamic_data, created_at')
+        .in('batch_id', batchIds)
+        .order('created_at', { ascending: true });
+
+    if (recordsError) {
+        inboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #d63031;">Error cargando registros</div>';
+        outboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #d63031;">Error cargando registros</div>';
+        return showToast("Error cargando movimientos de animales", "error");
+    }
+
+    // Build animal list (no selector): show most recent animal for this shed
+    const animalOptions = Array.from(new Set((batches || []).map(b => b.animal_name))).sort();
+    const label = document.getElementById('shedAnimalLabel');
+    const defaultAnimal = batches.length > 0 ? batches[0].animal_name : '';
+    if (label) {
+        label.textContent = defaultAnimal ? `${defaultAnimal}` : 'Animal: --';
+    }
+
+    // Use the most recent animal as selected (no manual filtering)
+    const selectedAnimal = defaultAnimal || null;
+    const recs = (records || []).filter(r => {
+        if (!selectedAnimal) return true;
+        const name = batchMap[r.batch_id];
+        return name === selectedAnimal;
+    });
+
+    const inbound = recs.filter(record => record.event_type === 'ingreso');
+    const outbound = recs.filter(record => record.event_type === 'salida');
+
+    const buildGroupedHtml = (list) => {
+        if (!list || list.length === 0) return '<div style="padding:15px; text-align:center; color:#b2bec3;">No hay registros</div>';
+
+        // Fetch config for animal (use first record's batch animal)
+        const animalName = batchMap[list[0].batch_id];
+        // get config mapping synchronously by querying supabase (already async context)
+        // We'll fetch configs for this animal
+        return (async () => {
+            // If a filter is not selected, fetch configs for all animals in this shed
+            const { data: configs } = await _supabase.from('animal_config').select('*').in('animal_name', animalOptions.length ? animalOptions : [animalName]);
+            const opMap = {};
+            (configs || []).forEach(c => { if (!opMap[c.field_label]) opMap[c.field_label] = { op: c.operation, display: c.display_format || 'number' }; });
+
+            // Initialize groups
+            const groups = {
+                'Suma': {},
+                'Resta': {},
+                'Base ± Total': {},
+                'Sumatoria': {},
+                'División/Porcentaje': {},
+                'Otros': {}
+            };
+
+            let totalUnits = 0;
+            let totalWeight = 0;
+
+            list.forEach(rec => {
+                totalUnits += rec.units || 0;
+                totalWeight += rec.initial_weight || 0;
+                const dyn = rec.dynamic_data || {};
+                Object.keys(dyn).forEach(k => {
+                    const val = dyn[k];
+                    const cfg = opMap[k];
+                    let group = 'Otros';
+                    if (cfg) {
+                        const op = cfg.op;
+                        if (op === 'sum') group = 'Suma';
+                        else if (op === 'sub') group = 'Resta';
+                        else if (op === 'formula_sum') group = 'Sumatoria';
+                        else if (op === 'formula_diff' || op === 'formula_add') group = 'Base ± Total';
+                        else if (op === 'formula_div') group = 'División/Porcentaje';
+                    }
+                    // Initialize
+                    if (groups[group][k] === undefined) groups[group][k] = { sum: 0, count: 0, display: (opMap[k]?.display || 'number') };
+                    groups[group][k].sum += parseFloat(val) || 0;
+                    groups[group][k].count += 1;
+                });
+            });
+
+            // Build HTML: header with totalWeight and totalUnits, then grouped rows
+            let html = `<div style="padding:10px; display:flex; gap:20px; justify-content:center; font-weight:bold; color:#2d3436;"><div>Peso Inicial: ${formatNumber(totalWeight)}</div><div>Unidades: ${formatNumber(totalUnits)}</div></div>`;
+            
+            // Reorganize groups: keep Base ± Total in one row, combine Sumatoria + División/Porcentaje in another
+            const rowOrder = ['Suma', 'Resta', 'Base ± Total', ['Sumatoria', 'División/Porcentaje'], 'Otros'];
+            
+            rowOrder.forEach(row => {
+                let combinedItems = {};
+                
+                if (Array.isArray(row)) {
+                    // Merge multiple groups into one row
+                    row.forEach(groupName => {
+                        if (groups[groupName]) {
+                            Object.assign(combinedItems, groups[groupName]);
+                        }
+                    });
+                } else {
+                    // Single group row
+                    if (groups[row]) {
+                        combinedItems = groups[row];
+                    }
+                }
+                
+                const labels = Object.keys(combinedItems);
+                if (labels.length === 0) return;
+
+                html += `<div style="padding:0; margin:0;">`;
+                html += `<table style="width:100%; border-collapse: collapse; margin:0; border:1px solid #bdbdbd;">`;
+                // header row with field labels
+                html += `<thead><tr style="background:#f8f9fa;">
+                    ${labels.map(l => `<th style="text-align:center; padding:6px; font-size:13px; color:#636e72; border:1px solid #bdbdbd; font-weight:700;">${l}</th>`).join('')}
+                </tr></thead>`;
+                // single data row
+                html += `<tbody><tr>`;
+                labels.forEach(label => {
+                    const it = combinedItems[label];
+                    let cellVal = it.display === 'percent' ? (it.sum / it.count * 100).toFixed(2) + '%' : it.sum.toFixed(2);
+                    html += `<td style="padding:6px; color:#2d3436; border:1px solid #bdbdbd; text-align:center;">${cellVal}</td>`;
+                });
+                html += `</tr></tbody>`;
+                html += `</table>`;
+                html += `</div>`;
+            });
+            return html;
+        })();
+    };
+
+    // Render inbound and outbound by awaiting buildGroupedHtml
+    const inboundHtml = await buildGroupedHtml(inbound);
+    const outboundHtml = await buildGroupedHtml(outbound);
+
+    inboundBody.innerHTML = `<div style="padding:10px;">${inboundHtml}</div>`;
+    outboundBody.innerHTML = `<div style="padding:10px;">${outboundHtml}</div>`;
+}
+
+// --- Gestión Dinámica de Producción ---
+
+window.openConfigAnimalFields = async (animalName) => {
+    selectedFormulaFields = []; // Limpiar selección previa para evitar errores en nuevas configuraciones
+    const modal = document.getElementById('modalConfigAnimalFields');
+    modal.dataset.animal = animalName;
+    modal.dataset.tab = 'ingreso'; // Pestaña por defecto
+    document.getElementById('configAnimalTitle').textContent = `Producción: ${animalName}`;
+    await renderAnimalConfigList();
+    showModal('modalConfigAnimalFields');
+};
+
+window.switchConfigTab = async (type) => {
+    selectedFormulaFields = []; // Limpiar selección al cambiar entre Ingreso/Salida
+    const modal = document.getElementById('modalConfigAnimalFields');
+    modal.dataset.tab = type;
+    document.getElementById('btnTabIngreso').style.background = type === 'ingreso' ? '#00b894' : '#b2bec3';
+    document.getElementById('btnTabSalida').style.background = type === 'salida' ? '#00b894' : '#b2bec3';
+    document.getElementById('formulaFieldsContainer').classList.add('hidden');
+    await renderAnimalConfigList();
+};
+
+// Manejador de clics para controlar el orden y límite de selección en fórmulas
+window.handleFormulaFieldClick = (checkbox, op) => {
+    if (checkbox.checked) {
+        if ((op === 'formula_diff' || op === 'formula_add' || op === 'formula_div') && selectedFormulaFields.length >= 2) {
+            checkbox.checked = false;
+            return showToast("En Base - Total solo puede seleccionar 2 campos", "error");
+        }
+        selectedFormulaFields.push(checkbox.value);
+    } else {
+        selectedFormulaFields = selectedFormulaFields.filter(f => f !== checkbox.value);
+    }
+};
+
+async function renderAnimalConfigList() {
+    const modal = document.getElementById('modalConfigAnimalFields');
+    const animalName = modal.dataset.animal;
+    const formType = modal.dataset.tab;
+    const container = document.getElementById('animalFieldsList');
+    
+    const { data, error } = await _supabase.from('animal_config')
+        .select('*')
+        .eq('animal_name', animalName)
+        .eq('form_type', formType);
+    
+    if (error) return container.innerHTML = "Error al cargar configuración";
+    
+    container.innerHTML = data.map(f => `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:white; padding:10px 15px; border-radius:6px; border:1px solid #dfe6e9; margin-bottom:8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+            <div style="display: flex; align-items: center; gap: 15px; flex: 1;">
+                <span style="font-weight:bold; color: #2d3436; font-size: 14px; min-width: 80px;">${f.field_label}</span> 
+                <span style="color:${f.operation.includes('sum') || f.operation.includes('add') ? '#00b894' : (f.operation.includes('sub') || f.operation.includes('diff') ? '#d63031' : '#0984e3')}; font-size: 10px; font-weight: bold; background: #f8f9fa; padding: 2px 6px; border-radius: 4px; border: 1px solid #dfe6e9;">
+                    ${f.operation === 'sum' ? 'SUMA' : (f.operation === 'sub' ? 'RESTA' : (f.operation === 'formula_sum' ? 'SUMATORIA' : (f.operation === 'formula_diff' ? 'BASE - TOTAL' : (f.operation === 'formula_add' ? 'BASE + TOTAL' : (f.operation === 'formula_div' ? 'DIVISIÓN' : 'INFO')))))}
+                </span>
+                ${f.allow_adjustment ? `
+                    <span style="font-size: 9px; color: #6c5ce7; font-weight: bold; border: 1px solid #6c5ce7; padding: 1px 4px; border-radius: 3px;">+ AJUSTE</span>
+                ` : ''}
+                <div style="display: flex; align-items: center; gap: 5px;">
+                    <input type="checkbox" ${f.is_editable && f.operation !== 'none' && !f.operation.startsWith('formula_') ? 'checked' : ''} disabled style="width: 13px; height: 13px; margin: 0; pointer-events: none;">
+                    <span style="font-size: 11px; color: #636e72;">Editable</span>
+                </div>
+            </div>
+            <button class="btn-cancel" style="width:30px; height:30px; padding:0; border-radius:50%; display: flex; align-items: center; justify-content: center;" onclick="deleteAnimalField(${f.id})">×</button>
+        </div>
+    `).join('');
+}
+
+window.saveAnimalField = async () => {
+    const modal = document.getElementById('modalConfigAnimalFields');
+    const animalName = modal.dataset.animal;
+    const formType = modal.dataset.tab;
+    const field_label = document.getElementById('newFieldName').value;
+    const operation = document.getElementById('newFieldOp').value;
+    const is_editable = (operation === 'none' || operation.startsWith('formula_')) ? false : document.getElementById('newFieldEditable').checked;
+    const allow_adjustment = document.getElementById('newFieldAllowAdjustment').checked;
+    const display_format = document.getElementById('newFieldDisplayFormat').value;
+
+    if (!field_label) return showToast("Nombre del campo requerido", "error");
+
+    // Validación: Permitir 1 o máximo 2 campos para operaciones de fórmula.
+    if ((operation === 'formula_diff' || operation === 'formula_add' || operation === 'formula_div') && (selectedFormulaFields.length < 1 || selectedFormulaFields.length > 2)) {
+        return showToast("Para esta operación debe seleccionar 1 o 2 campos", "error");
+    }
+
+    const { error } = await _supabase.from('animal_config').insert([{
+        animal_name: animalName,
+        form_type: formType,
+        field_label,
+        operation,
+        is_editable,
+        formula_fields: selectedFormulaFields.length > 0 ? JSON.stringify(selectedFormulaFields) : null,
+        allow_adjustment: allow_adjustment,
+        display_format: display_format
+    }]);
+
+    if (error) showToast("Error al guardar: " + error.message, "error");
+    else {
+        document.getElementById('newFieldName').value = "";
+        showToast("Campo añadido");
+        document.getElementById('formulaFieldsContainer').classList.add('hidden');
+        selectedFormulaFields = [];
+        renderAnimalConfigList();
+    }
+};
+
+window.deleteAnimalField = async (id) => {
+    const { error } = await _supabase.from('animal_config').delete().eq('id', id);
+    if (error) showToast("Error al borrar", "error");
+    else renderAnimalConfigList();
 };
 
 // --- Lógica de Ingreso de Animales ---
@@ -1816,12 +2219,11 @@ async function prepareInboundAnimalModal() {
     delete form.dataset.oldUnits;
     delete form.dataset.oldWeight;
     document.getElementById('animalStockDisplay').classList.add('hidden');
-    document.getElementById('inboundAnimalTotalWeight').textContent = "0";
 
     // Ingeniería de Datos: Consultar productos marcados como animales
     const { data: animals, error } = await _supabase
         .from('products')
-        .select('name, unit, weigth')
+        .select('code, name, unit, weigth, medit')
         .eq('animal', true)
         .order('name');
 
@@ -1831,17 +2233,205 @@ async function prepareInboundAnimalModal() {
     }
 
     select.innerHTML = '<option value="" disabled selected hidden>Seleccione animal...</option>' +
-        (animals || []).map(a => `<option value="${a.name}" data-unit="${a.unit}" data-weight="${a.weigth || 0}">${a.name}</option>`).join('');
+        (animals || []).map(a => `<option value="${a.name}" data-code="${a.code}" data-unit="${a.unit}" data-weight="${a.weigth || 0}" data-medit="${a.medit || 'Unidad'}">${a.name}</option>`).join('');
 
     // Listeners de tiempo real
     const updateDisplay = () => calculateAnimalInboundTotals();
     document.getElementById('inboundAnimalUnitsQty').oninput = updateDisplay;
     document.getElementById('inboundAnimalWeightQty').oninput = updateDisplay;
-    select.onchange = updateDisplay;
+
+    select.onchange = async () => {
+        await loadDynamicProductionFields(select.value, 'ingreso');
+        await loadAnimalInboundStock(select);
+        updateDisplay();
+    };
+}
+
+async function loadAnimalInboundStock(select) {
+    const modalManage = document.getElementById('modalManageShedAnimals');
+    const farm = modalManage?.dataset.farm;
+    const shedNumber = modalManage?.dataset.number;
+
+    const currentUnitsEl = document.getElementById('currentAnimalUnits');
+    const currentWeightEl = document.getElementById('currentAnimalWeight');
+
+    let currentUnits = 0;
+    let currentWeight = 0;
+
+    if (select && select.value && farm && shedNumber) {
+        const productCode = select.options[select.selectedIndex]?.dataset.code;
+        if (productCode) {
+            const { data: batch, error: batchErr } = await _supabase
+                .from('animal_batches')
+                .select('id')
+                .eq('animal_code', productCode)
+                .eq('farm_name', farm)
+                .eq('shed_number', shedNumber)
+                .eq('status', 'active')
+                .maybeSingle();
+
+            if (!batchErr && batch?.id) {
+                const { data: records, error: recordsError } = await _supabase
+                    .from('animal_production_records')
+                    .select('event_type, units, initial_weight, dynamic_data, created_at')
+                    .eq('batch_id', batch.id);
+
+                if (!recordsError && records?.length) {
+                    records.forEach(rec => {
+                        const factor = rec.event_type === 'ingreso' ? 1 : -1;
+                        currentUnits += Number(rec.units) || 0;
+                        currentWeight += Number(rec.initial_weight) || 0;
+                    });
+
+                    const latestIngreso = [...records].reverse().find(r => r.event_type === 'ingreso');
+                    const currentDetails = latestIngreso?.dynamic_data || {};
+                    select.dataset.currentDynamic = JSON.stringify(currentDetails);
+                } else {
+                    select.dataset.currentDynamic = JSON.stringify({});
+                }
+            }
+        }
+    }
+
+    select.dataset.currentUnits = currentUnits;
+    select.dataset.currentWeight = currentWeight;
+    if (currentUnitsEl) currentUnitsEl.textContent = formatNumber(currentUnits);
+    if (currentWeightEl) currentWeightEl.textContent = formatNumber(currentWeight);
+
+    const currentDetailsEl = document.getElementById('currentAnimalDetails');
+    if (currentDetailsEl) {
+        const details = JSON.parse(select.dataset.currentDynamic || '{}');
+        if (details && Object.keys(details).length > 0) {
+            currentDetailsEl.innerHTML = Object.entries(details).map(([label, value]) => {
+                const formatted = (typeof value === 'number' || !Number.isNaN(Number(value))) ? formatNumber(Number(value)) : value;
+                return `<div><strong>${label}:</strong> ${formatted}</div>`;
+            }).join('');
+        } else {
+            currentDetailsEl.innerHTML = '<div style="color:#636e72;">No hay datos de producción dinámica registrados para este lote.</div>';
+        }
+    }
+}
+
+async function prepareOutboundAnimalModal() {
+    const form = document.getElementById('formOutboundAnimal');
+    form.reset();
+    delete form.dataset.batchId;
+    delete form.dataset.inboundDynamicData;
+    delete form.dataset.inboundInitialWeight;
+    delete form.dataset.batchUnits;
+    delete form.dataset.batchWeight;
+    document.getElementById('batchStockDisplay')?.classList.add('hidden');
+
+    const select = document.getElementById('outboundAnimalProduct');
+    const modalManage = document.getElementById('modalManageShedAnimals');
+    const farm = modalManage.dataset.farm;
+    const shedNumber = modalManage.dataset.number;
+
+    // Cargar solo animales de lotes activos en este galpón
+    const { data: batches, error } = await _supabase
+        .from('animal_batches')
+        .select('id, animal_name, animal_code')
+        .eq('farm_name', farm)
+        .eq('shed_number', shedNumber)
+        .eq('status', 'active');
+
+    if (error) return showToast("Error al cargar lotes activos", "error");
+
+    select.innerHTML = '<option value="" disabled selected hidden>Seleccione animal a retirar...</option>' +
+        (batches || []).map(b => `<option value="${b.animal_name}" data-code="${b.animal_code}" data-batch-id="${b.id}">${b.animal_name}</option>`).join('');
+
+    select.onchange = async () => {
+        const batchId = select.options[select.selectedIndex].dataset.batchId;
+        
+        // Ingeniería de Datos: Calcular balance actual del LOTE sumando ingresos y restando salidas anteriores
+        const { data: records } = await _supabase
+            .from('animal_production_records')
+            .select('event_type, units, initial_weight, dynamic_data')
+            .eq('batch_id', batchId);
+        
+        // Rescatar datos dinámicos del ingreso para permitir cálculos cruzados (ej. Porcentaje)
+        const inboundRec = (records || []).find(r => r.event_type === 'ingreso');
+        form.dataset.inboundDynamicData = JSON.stringify(inboundRec?.dynamic_data || {});
+        form.dataset.inboundInitialWeight = inboundRec?.initial_weight || 0;
+        
+        const balance = (records || []).reduce((acc, r) => {
+            const factor = r.event_type === 'ingreso' ? 1 : -1;
+            acc.units += r.units * factor;
+            acc.weight += Number(r.initial_weight) * factor;
+            return acc;
+        }, { units: 0, weight: 0 });
+
+        // Guardar balance en el formulario para validación posterior
+        form.dataset.batchUnits = balance.units;
+        form.dataset.batchWeight = balance.weight;
+        form.dataset.batchId = batchId;
+
+        await loadDynamicProductionFields(select.value, 'salida');
+        calculateAnimalOutboundTotals();
+    };
+
+    const updateDisplay = () => calculateAnimalOutboundTotals();
+    document.getElementById('outboundAnimalUnitsQty').oninput = updateDisplay;
+    document.getElementById('outboundAnimalWeightQty').oninput = updateDisplay;
+}
+
+async function loadDynamicProductionFields(animalName, formType = 'ingreso') {
+    const container = document.getElementById(formType === 'ingreso' ? 'dynamicProductionFields' : 'dynamicProductionFieldsOut');
+    if (!container) return;
+    const { data } = await _supabase.from('animal_config').select('*').eq('animal_name', animalName).eq('form_type', formType);
     
-    // Listener para los 5 campos estáticos
-    ['fieldPechuga', 'fieldPernil', 'fieldAla', 'fieldHueso', 'fieldEntero'].forEach(id => {
-        document.getElementById(id).oninput = updateDisplay;
+    if (!data || data.length === 0) {
+        container.innerHTML = '<p style="font-size: 11px; color: #e17055; text-align: center;">Nota: Este animal no tiene campos de producción configurados.</p>';
+        return;
+    }
+
+    container.innerHTML = data.map(f => {
+        const isInfo = f.operation === 'none';
+        const isFormula = f.operation.startsWith('formula_');
+        const allowAdj = f.allow_adjustment;
+        const isSum = f.operation === 'sum';
+        
+        return `
+        <div class="input-group">
+            <label style="font-size: 10px; font-weight: 700; color: ${isInfo ? '#0984e3' : '#636e72'}; text-transform: uppercase;">${f.field_label}:</label>
+            <div style="display: flex; gap: 8px; align-items: stretch;">
+                <input type="number" 
+                       class="dynamic-prod-field ${isFormula ? 'result-field' : ''}" 
+                       data-label="${f.field_label}" 
+                       data-op="${f.operation}" 
+                       data-formula-fields='${f.formula_fields || '[]'}'
+                       data-display-format="${f.display_format || 'number'}"
+                       placeholder="${isFormula ? 'Cálculo automático' : (isInfo ? 'Información' : '0.00')}" 
+                       ${(isFormula || isInfo) ? 'readonly' : ''} 
+                       style="${isInfo ? 'background: #ebf5fb; border-left: 3px solid #0984e3; color: #2c3e50;' : (isFormula ? 'background: #f1f3f5; font-weight: bold; border-left: 3px solid #6c5ce7;' : 'border-left: 3px solid #dfe6e9;')} padding: 6px 10px; height: 32px; font-size: 13px;"
+                       step="any">
+                ${isSum ? `
+                    <input type="number" 
+                           class="bultos-input" 
+                           data-label="${f.field_label}" 
+                           placeholder="Bultos" 
+                           style="padding: 6px 8px; height: 32px; font-size: 13px; border-left: 3px solid #fdcb6e; background: #fffbf0;" 
+                           min="0" step="1">
+                ` : ''}
+            </div>
+        </div>
+        ${allowAdj ? `
+            <div style="margin-top: 3px; margin-bottom: 6px; padding-left: 10px; display: flex; align-items: center; gap: 5px;">
+                <label style="font-size: 9px; color: #636e72; font-weight: bold; white-space: nowrap;">AJUSTE +/-:</label>
+                <input type="number" 
+                       class="adjustment-input" 
+                       data-for="${f.field_label}" 
+                       placeholder="0.00" 
+                       style="height: 24px; font-size: 11px; padding: 2px 8px; border: 1px dashed #b2bec3; background: #fff; width: 80px;" 
+                       step="any">
+            </div>
+        ` : ''}
+    `}).join('');
+
+    // Agregar listeners a los nuevos inputs
+    container.querySelectorAll('input').forEach(input => {
+        if (formType === 'ingreso') input.oninput = () => calculateAnimalInboundTotals();
+        else input.oninput = () => calculateAnimalOutboundTotals();
     });
 }
 
@@ -1850,28 +2440,59 @@ function calculateAnimalInboundTotals() {
     const selected = select.options[select.selectedIndex];
     if (!selected || selected.disabled) return;
 
-    // Datos base del producto
-    const stockUnits = parseFloat(selected.dataset.unit) || 0;
-    const stockWeight = parseFloat(selected.dataset.weight) || 0;
-
     // Entradas del formulario
     const inputUnits = parseFloat(document.getElementById('inboundAnimalUnitsQty').value) || 0;
     const initialWeight = parseFloat(document.getElementById('inboundAnimalWeightQty').value) || 0;
+
+    // Datos base para proyecciones visuales (opcional)
+    const stockUnits = parseFloat(selected.dataset.currentUnits ?? selected.dataset.unit) || 0;
+    const stockWeight = parseFloat(selected.dataset.currentWeight ?? selected.dataset.weight) || 0;
 
     const form = document.getElementById('formInboundAnimal');
     const isEdit = form.dataset.mode === 'edit';
     const oldUnits = isEdit ? parseFloat(form.dataset.oldUnits) || 0 : 0;
     const oldWeight = isEdit ? parseFloat(form.dataset.oldWeight) || 0 : 0;
 
-    // Sumar campos estáticos de producción
-    const pPechuga = parseFloat(document.getElementById('fieldPechuga').value) || 0;
-    const pPernil = parseFloat(document.getElementById('fieldPernil').value) || 0;
-    const pAla = parseFloat(document.getElementById('fieldAla').value) || 0;
-    const pHueso = parseFloat(document.getElementById('fieldHueso').value) || 0;
-    const pEntero = parseFloat(document.getElementById('fieldEntero').value) || 0;
+    // Mapear los valores vigentes por etiqueta de campo
+    const fieldValues = {};
+    fieldValues['Peso Inicial'] = parseFloat(document.getElementById('inboundAnimalWeightQty').value) || 0;
 
-    const totalWeight = pPechuga + pPernil + pAla + pHueso + pEntero;
-    const merma = initialWeight - totalWeight;
+    // Paso 1: Obtener valores iniciales de TODOS los campos dinámicos
+    document.querySelectorAll('#dynamicProductionFields .dynamic-prod-field').forEach(input => {
+        fieldValues[input.dataset.label] = getNumericFieldValue(input);
+    });
+
+    // Función interna para procesar fórmulas y actualizar el mapa de valores
+    const processFormulas = () => {
+        document.querySelectorAll('#dynamicProductionFields .dynamic-prod-field.result-field').forEach(resInput => {
+            const op = resInput.dataset.op;
+            let targets = [];
+            try { targets = JSON.parse(resInput.dataset.formulaFields || '[]'); } catch(e) {}
+            const format = resInput.dataset.displayFormat;
+
+            let resultVal = computeFormulaResult(op, targets, fieldValues);
+
+            // Aplicar ajuste manual si existe el campo
+            const adjInput = document.querySelector(`#dynamicProductionFields .adjustment-input[data-for="${resInput.dataset.label}"]`);
+            const adjVal = parseFloat(adjInput?.value) || 0;
+            const finalVal = resultVal + adjVal;
+
+            if (format === 'percent') {
+                resInput.type = "text"; // Cambiamos a texto para mostrar el símbolo %
+                resInput.value = (finalVal * 100).toFixed(2) + '%';
+            } else {
+                resInput.type = "number";
+                resInput.value = finalVal.toFixed(2);
+            }
+
+            if (op === 'formula_diff' || op === 'formula_add' || op === 'formula_div') resInput.style.color = finalVal < 0 ? '#d63031' : '#00b894';
+            fieldValues[resInput.dataset.label] = finalVal;
+        });
+    };
+
+    // Ejecutar doble pasada para asegurar que fórmulas que dependen de otras fórmulas se actualicen correctamente
+    processFormulas();
+    processFormulas();
 
     // Cálculo de Disponibilidad Real (Mermando en tiempo real del stock global)
     // Si es edición, sumamos lo anterior para calcular el impacto neto
@@ -1895,14 +2516,72 @@ function calculateAnimalInboundTotals() {
     // Feedback visual de alerta si el stock se agota
     unitsEl.style.color = availableUnits < 0 ? '#d63031' : '#2d3436';
     weightEl.style.color = availableWeight < 0 ? '#d63031' : '#2d3436';
+}
 
-    // Actualizar total general
-    document.getElementById('inboundAnimalTotalWeight').textContent = formatNumber(totalWeight);
+function calculateAnimalOutboundTotals() {
+    const form = document.getElementById('formOutboundAnimal');
+    const select = document.getElementById('outboundAnimalProduct');
+    const selected = select.options[select.selectedIndex];
+    if (!selected || selected.disabled) return;
 
-    // Actualizar Merma
-    const mermaElement = document.getElementById('inboundAnimalMerma');
-    mermaElement.textContent = formatNumber(merma);
-    mermaElement.style.color = merma < 0 ? '#ff7675' : '#fab1a0';
+    const inputUnits = parseFloat(document.getElementById('outboundAnimalUnitsQty').value) || 0;
+    const inputWeight = parseFloat(document.getElementById('outboundAnimalWeightQty').value) || 0;
+
+    // Balance del lote cargado previamente
+    const batchUnits = parseFloat(form.dataset.batchUnits) || 0;
+    const batchWeight = parseFloat(form.dataset.batchWeight) || 0;
+
+    // Proyección del lote
+    const projUnits = batchUnits - inputUnits;
+    const projWeight = batchWeight - inputWeight;
+
+    // Actualizar UI del Stock del Lote
+    const display = document.getElementById('batchStockDisplay');
+    display?.classList.remove('hidden');
+    
+    const unitsEl = document.getElementById('currentBatchUnits');
+    const weightEl = document.getElementById('currentBatchWeight');
+    if (unitsEl) unitsEl.textContent = formatNumber(projUnits);
+    if (weightEl) weightEl.textContent = formatNumber(projWeight);
+    
+    if (unitsEl) unitsEl.style.color = projUnits < 0 ? '#d63031' : '#2d3436';
+    if (weightEl) weightEl.style.color = projWeight < 0 ? '#d63031' : '#2d3436';
+
+    const fieldValues = {};
+    // Valor base del formulario (Salida)
+    fieldValues['Peso Inicial'] = parseFloat(document.getElementById('outboundAnimalWeightQty').value) || 0;
+    fieldValues['Peso Inicial (Ingreso)'] = parseFloat(form.dataset.inboundInitialWeight) || 0;
+
+    // Cargar datos que venían del ingreso original para cálculos de rendimiento/porcentaje
+    const inboundData = JSON.parse(form.dataset.inboundDynamicData || '{}');
+    Object.assign(fieldValues, inboundData);
+
+    document.querySelectorAll('#dynamicProductionFieldsOut .dynamic-prod-field').forEach(input => {
+        if (!input.classList.contains('result-field')) {
+            fieldValues[input.dataset.label] = getNumericFieldValue(input);
+        }
+    });
+
+    document.querySelectorAll('#dynamicProductionFieldsOut .dynamic-prod-field.result-field').forEach(resInput => {
+        const op = resInput.dataset.op;
+        let targets = [];
+        try { targets = JSON.parse(resInput.dataset.formulaFields || '[]'); } catch(e) {}
+        const format = resInput.dataset.displayFormat;
+
+        let resultVal = computeFormulaResult(op, targets, fieldValues);
+
+        const adjInput = document.querySelector(`#dynamicProductionFieldsOut .adjustment-input[data-for="${resInput.dataset.label}"]`);
+        const adjVal = parseFloat(adjInput?.value) || 0;
+        const finalVal = resultVal + adjVal;
+
+        if (format === 'percent') {
+            resInput.type = "text";
+            resInput.value = (finalVal * 100).toFixed(2) + '%';
+        } else {
+            resInput.type = "number";
+            resInput.value = finalVal.toFixed(2);
+        }
+    });
 }
 
 // Ingeniería de Backend: Procesamiento del Ingreso de Animales al Galpón
@@ -1914,63 +2593,333 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
     const productName = document.getElementById('inboundAnimalProduct').value;
     const units = parseFloat(document.getElementById('inboundAnimalUnitsQty').value) || 0;
     const initialWeight = parseFloat(document.getElementById('inboundAnimalWeightQty').value) || 0;
+    const productCode = document.getElementById('inboundAnimalProduct').options[document.getElementById('inboundAnimalProduct').selectedIndex].dataset.code;
 
-    // Re-calcular totales estáticos para el envío
-    const pPechuga = parseFloat(document.getElementById('fieldPechuga').value) || 0;
-    const pPernil = parseFloat(document.getElementById('fieldPernil').value) || 0;
-    const pAla = parseFloat(document.getElementById('fieldAla').value) || 0;
-    const pHueso = parseFloat(document.getElementById('fieldHueso').value) || 0;
-    const pEntero = parseFloat(document.getElementById('fieldEntero').value) || 0;
+    // Recopilar datos dinámicos estructurados para la columna JSONB
+    let productionData = {}; // Objeto para la columna JSONB
+    document.querySelectorAll('#dynamicProductionFields .dynamic-prod-field').forEach(input => {
+        productionData[input.dataset.label] = getNumericFieldValue(input);
+    });
+    // Incluir el ajuste manual en el JSON si existe
+    document.querySelectorAll('#dynamicProductionFields .adjustment-input').forEach(adjInput => {
+        const adjValue = parseFloat(adjInput.value) || 0;
+        if (adjValue !== 0) {
+            productionData[`Ajuste: ${adjInput.dataset.for}`] = adjValue;
+        }
+    });
+    // Incluir bultos para campos de tipo 'sum'
+    document.querySelectorAll('#dynamicProductionFields .bultos-input').forEach(bultosInput => {
+        const bultosValue = parseInt(bultosInput.value) || 0;
+        if (bultosValue > 0) {
+            productionData[`Bultos: ${bultosInput.dataset.label}`] = bultosValue;
+        }
+    });
 
-    const totalWeight = pPechuga + pPernil + pAla + pHueso + pEntero;
-    const merma = initialWeight - totalWeight;
+    // Filtrar solo los campos que en animal_config tengan operation = 'sum' para el inventario
+    const { data: sumFields } = await _supabase
+        .from('animal_config')
+        .select('field_label')
+        .eq('animal_name', productName)
+        .eq('form_type', 'ingreso')
+        .eq('operation', 'sum');
+
+    const sumLabels = new Set((sumFields || []).map(f => f.field_label));
 
     const modalManage = document.getElementById('modalManageShedAnimals');
     const farm = modalManage.dataset.farm;
     const shedNumber = modalManage.dataset.number;
 
-    if (!productName) return showToast("Seleccione un animal", "error");
+    if (!productName || !productCode) return showToast("Seleccione un animal", "error");
 
-    // 1. Actualizar Stock Maestro (Tabla Products)
-    const { data: prodData } = await _supabase.from('products').select('unit, weigth').eq('name', productName).single();
-    if (!prodData) return showToast("Error al obtener datos del animal", "error");
+    // --- LÓGICA DE NUEVAS TABLAS ---
 
-    let diffUnits = units;
-    let diffWeight = initialWeight;
+    // 1. Buscar o crear el lote de animales
+    let { data: batch, error: batchError } = await _supabase
+        .from('animal_batches')
+        .select('id')
+        .eq('animal_code', productCode)
+        .eq('farm_name', farm)
+        .eq('shed_number', shedNumber)
+        .eq('status', 'active')
+        .maybeSingle();
 
-    if (isEdit) {
-        const oldUnits = parseFloat(form.dataset.oldUnits) || 0;
-        const oldWeight = parseFloat(form.dataset.oldWeight) || 0;
-        diffUnits = units - oldUnits;
-        diffWeight = initialWeight - oldWeight;
+    if (batchError) return showToast("Error buscando lote: " + batchError.message, "error");
+
+    if (!batch) {
+        const { data: newBatch, error: newBatchError } = await _supabase
+            .from('animal_batches')
+            .insert({
+                animal_code: productCode,
+                animal_name: productName,
+                farm_name: farm,
+                shed_number: shedNumber,
+                status: 'active'
+            })
+            .select('id')
+            .single();
+        
+        if (newBatchError) return showToast("Error creando lote: " + newBatchError.message, "error");
+        batch = newBatch;
     }
 
-    const newGlobalUnits = (prodData.unit || 0) - diffUnits;
-    const newGlobalWeight = (prodData.weigth || 0) - diffWeight;
+    // 2. Crear el registro de producción
+    const { data: recordData, error: recordError } = await _supabase
+        .from('animal_production_records')
+        .insert({
+            batch_id: batch.id,
+            event_type: 'ingreso',
+            units: units,
+            initial_weight: initialWeight,
+            dynamic_data: productionData
+        })
+        .select('id')
+        .single();
 
-    const { error: prodErr } = await _supabase
-        .from('products')
-        .update({ unit: newGlobalUnits, weigth: newGlobalWeight })
-        .eq('name', productName);
+    if (recordError) return showToast("Error guardando registro: " + recordError.message, "error");
 
-    if (prodErr) return showToast("Error al actualizar stock global: " + prodErr.message, "error");
+    // --- Actualizar inventario de animales ---
+    // Crear un registro individual en inventory por cada campo de productionData que tenga operation='sum' en config
+    const invOps = Object.entries(productionData)
+        .filter(([label, value]) => {
+            const num = parseFloat(value);
+            return sumLabels.has(label) && !isNaN(num) && num !== 0;
+        })
+        .map(async ([label, value]) => {
+            const numValue = parseFloat(value);
+            const { data: existingFieldInv, error: existingFieldError } = await _supabase
+                .from('inventory')
+                .select('id, amount')
+                .eq('product', label)
+                .eq('farm', farm)
+                .eq('shed', String(shedNumber))
+                .maybeSingle();
 
-    // 2. Actualizar Ocupación del Galpón
-    await updateShedUsage(farm, parseInt(shedNumber), diffUnits, true);
+            if (existingFieldError) {
+                console.error(`Error consultando inventario animal para campo ${label}:`, existingFieldError.message);
+            } else if (!existingFieldInv) {
+                const { error: invInsertError } = await _supabase.from('inventory').insert({
+                    code: productCode,
+                    product: label,
+                    shed: String(shedNumber),
+                    amount: numValue,
+                    farm: farm,
+                    provider: [],
+                    medit: 'KG',
+                    created_at: getColombiaTimestamp()
+                });
+                if (invInsertError) console.error(`Error creando inventario animal para campo ${label}:`, invInsertError.message);
+            } else {
+                const newAmount = (existingFieldInv.amount || 0) + numValue;
+                const { error: invUpdateError } = await _supabase.from('inventory')
+                    .update({ amount: newAmount })
+                    .eq('id', existingFieldInv.id);
+                if (invUpdateError) console.error(`Error actualizando inventario animal para campo ${label}:`, invUpdateError.message);
+            }
+        });
 
-    // 3. Registrar Movimiento Histórico
-    await _supabase.from('movements').insert([{
-        name: productName,
-        type: isEdit ? "edicion_ingreso_animal" : "ingreso_animal",
-        amount: units,
-        farm: farm,
-        medit: "KG",
-        shed: String(shedNumber),
-        description: `Ingreso a Galpón ${shedNumber}. Prod: Pechuga(${pPechuga}), Pernil(${pPernil}), Ala(${pAla}), Hueso(${pHueso}), Entero(${pEntero}). Merma: ${merma} KG.`,
-        created_at: getColombiaTimestamp()
-    }]);
+    await Promise.all(invOps);
+
+    // Guardar registros de bultos por campo de suma
+    const bultosEntriesIngreso = Object.entries(productionData)
+        .filter(([key, value]) => key.startsWith('Bultos:') && parseFloat(value) > 0);
+
+    if (bultosEntriesIngreso.length > 0 && recordData?.id) {
+        const bultosInsertsIngreso = bultosEntriesIngreso.map(([key, value]) => {
+            const fieldName = key.replace('Bultos: ', '');
+            return _supabase.from('animal_production_bultos').insert({
+                production_record_id: recordData.id,
+                event_type: 'ingreso',
+                field_name: fieldName,
+                bultos: parseInt(value)
+            });
+        });
+        await Promise.all(bultosInsertsIngreso);
+    }
 
     showToast(isEdit ? "Registro actualizado" : "Animales ingresados al galpón correctamente");
+    closeModals();
+    if (window.CURRENT_INVENTORY_MODE === 'sheds') loadFilteredInventory('sheds');
+});
+
+// Ingeniería de Backend: Procesamiento de la Salida de Animales del Galpón
+document.getElementById('formOutboundAnimal')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+
+    const productName = document.getElementById('outboundAnimalProduct').value;
+    const productCode = document.getElementById('outboundAnimalProduct').options[document.getElementById('outboundAnimalProduct').selectedIndex].dataset.code;
+    const units = parseFloat(document.getElementById('outboundAnimalUnitsQty').value) || 0;
+    const baseWeight = parseFloat(document.getElementById('outboundAnimalWeightQty').value) || 0;
+    const batchId = form.dataset.batchId;
+
+    let productionData = {};
+    document.querySelectorAll('#dynamicProductionFieldsOut .dynamic-prod-field').forEach(input => {
+        productionData[input.dataset.label] = getNumericFieldValue(input);
+    });
+    document.querySelectorAll('#dynamicProductionFieldsOut .adjustment-input').forEach(adjInput => {
+        const adjValue = parseFloat(adjInput.value) || 0;
+        if (adjValue !== 0) {
+            productionData[`Ajuste: ${adjInput.dataset.for}`] = adjValue;
+        }
+    });
+    // Incluir bultos para campos de tipo 'sum'
+    document.querySelectorAll('#dynamicProductionFieldsOut .bultos-input').forEach(bultosInput => {
+        const bultosValue = parseInt(bultosInput.value) || 0;
+        if (bultosValue > 0) {
+            productionData[`Bultos: ${bultosInput.dataset.label}`] = bultosValue;
+        }
+    });
+
+    // Filtrar solo los campos que en animal_config tengan operation = 'sum' para el inventario
+    const { data: sumFieldsOut } = await _supabase
+        .from('animal_config')
+        .select('field_label')
+        .eq('animal_name', productName)
+        .eq('form_type', 'salida')
+        .eq('operation', 'sum');
+
+    const sumLabelsOut = new Set((sumFieldsOut || []).map(f => f.field_label));
+
+    const modalManage = document.getElementById('modalManageShedAnimals');
+    const farm = modalManage.dataset.farm;
+    const shedNumber = modalManage.dataset.number;
+
+    if (!productName || !productCode) return showToast("Seleccione un animal", "error");
+
+    // 1. Encontrar el lote activo
+    let batch = null;
+    if (batchId) {
+        batch = { id: batchId };
+    } else {
+        const { data: queriedBatch, error: batchError } = await _supabase
+            .from('animal_batches')
+            .select('id')
+            .eq('animal_code', productCode)
+            .eq('farm_name', farm)
+            .eq('shed_number', shedNumber)
+            .eq('status', 'active')
+            .single();
+        if (batchError || !queriedBatch) return showToast("No se encontró un lote activo para este animal en el galpón.", "error");
+        batch = queriedBatch;
+    }
+
+    // Validar disponibilidad REAL del LOTE (Entradas - Salidas previas)
+    const batchUnitsAvail = parseFloat(form.dataset.batchUnits) || 0;
+    const batchWeightAvail = parseFloat(form.dataset.batchWeight) || 0;
+
+    if (units > batchUnitsAvail || baseWeight > batchWeightAvail) {
+        return showToast(`Stock del lote insuficiente (Disponible: ${batchUnitsAvail} unid, ${batchWeightAvail} kg)`, "error");
+    }
+
+    // 2. Crear el registro de producción de salida
+    const { data: outRec, error: outRecErr } = await _supabase.from('animal_production_records').insert({
+        batch_id: batch.id,
+        event_type: 'salida',
+        units: units,
+        initial_weight: baseWeight,
+        dynamic_data: productionData
+    }).select('id').single();
+
+    if (outRecErr) return showToast("Error guardando registro de salida: " + outRecErr.message, "error");
+
+    // --- Actualizar inventario de animales ---
+    // Restar de cada registro individual en inventory por cada campo de productionData que tenga operation='sum' en config
+    const invOpsOut = Object.entries(productionData)
+        .filter(([label, value]) => {
+            const num = parseFloat(value);
+            return sumLabelsOut.has(label) && !isNaN(num) && num !== 0;
+        })
+        .map(async ([label, value]) => {
+            const numValue = parseFloat(value);
+            const { data: existingFieldInv, error: existingFieldError } = await _supabase
+                .from('inventory')
+                .select('id, amount')
+                .eq('product', label)
+                .eq('farm', farm)
+                .eq('shed', String(shedNumber))
+                .maybeSingle();
+
+            if (existingFieldError) {
+                console.error(`Error consultando inventario animal para campo ${label}:`, existingFieldError.message);
+            } else if (!existingFieldInv) {
+                console.warn(`No existe inventario del campo ${label} en este galpón para registrar la salida.`);
+            } else {
+                const newAmount = (existingFieldInv.amount || 0) - numValue;
+                const { error: invUpdateError } = await _supabase.from('inventory')
+                    .update({ amount: newAmount })
+                    .eq('id', existingFieldInv.id);
+                if (invUpdateError) console.error(`Error actualizando inventario animal para campo ${label}:`, invUpdateError.message);
+            }
+        });
+
+    await Promise.all(invOpsOut);
+
+    // Guardar registros de bultos por campo de suma
+    const bultosEntriesSalida = Object.entries(productionData)
+        .filter(([key, value]) => key.startsWith('Bultos:') && parseFloat(value) > 0);
+
+    if (bultosEntriesSalida.length > 0 && outRec?.id) {
+        const bultosInsertsSalida = bultosEntriesSalida.map(([key, value]) => {
+            const fieldName = key.replace('Bultos: ', '');
+            return _supabase.from('animal_production_bultos').insert({
+                production_record_id: outRec.id,
+                event_type: 'salida',
+                field_name: fieldName,
+                bultos: parseInt(value)
+            });
+        });
+        await Promise.all(bultosInsertsSalida);
+    }
+
+    // 3. Actualizar stock global y ocupación del galpón
+    const { data: prodData } = await _supabase.from('products').select('unit, weigth').eq('code', productCode).single();
+    const newGlobalUnits = (prodData.unit || 0) - units;
+    const newGlobalWeight = (prodData.weigth || 0) - baseWeight;
+    await _supabase.from('products').update({ unit: newGlobalUnits, weigth: newGlobalWeight }).eq('code', productCode);
+    await updateShedUsage(farm, parseInt(shedNumber), units, false);
+
+    // Registrar movimiento histórico y asociarlo al primer registro de salida
+    const { data: mvOut, error: mvOutErr } = await _supabase.from('movements').insert([{
+        name: productName,
+        type: 'salida_animal',
+        amount: units,
+        farm: farm,
+        medit: 'KG',
+        shed: String(shedNumber),
+        description: `Salida procesada en Galpón ${shedNumber}`,
+        production_data: productionData,
+        created_at: getColombiaTimestamp()
+    }]).select('id').single();
+
+    if (mvOutErr) console.warn('Warning: movimiento salida no creado:', mvOutErr.message);
+    if (mvOut && mvOut.id) {
+        // Asociar al primer registro de salida de este lote
+        const { data: firstOut, error: firstOutErr } = await _supabase
+            .from('animal_production_records')
+            .select('id')
+            .eq('batch_id', batch.id)
+            .eq('event_type', 'salida')
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+        if (firstOut && firstOut.id) {
+            await _supabase.from('animal_production_records').update({ movement_id: mvOut.id }).eq('id', firstOut.id);
+        }
+    }
+    // 4. Verificar si el lote debe cerrarse
+    const { data: records, error: recordsError } = await _supabase.from('animal_production_records').select('event_type, units').eq('batch_id', batch.id);
+    if (!recordsError) {
+        const totalUnits = records.reduce((acc, rec) => {
+            return rec.event_type === 'ingreso' ? acc + rec.units : acc - rec.units;
+        }, 0);
+
+        if (totalUnits <= 0) {
+            await _supabase.from('animal_batches').update({ status: 'closed' }).eq('id', batch.id);
+            showToast("Lote finalizado y cerrado automáticamente.", "success");
+        }
+    }
+
+    showToast("Salida de animales registrada correctamente");
     closeModals();
     if (window.CURRENT_INVENTORY_MODE === 'sheds') loadFilteredInventory('sheds');
 });
