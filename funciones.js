@@ -120,7 +120,7 @@ const computeFormulaResult = (op, targets, fieldValues) => {
     return 0;
 };
 
-// Ingeniería de Sistemas: Generador de código correlativo automático
+// Ingeniería de Sistemas: Generador de código correlativo automático para productos
 const generateNextProductCode = async () => {
     const { data, error } = await _supabase
         .from('products')
@@ -134,6 +134,23 @@ const generateNextProductCode = async () => {
 
     let nextCode = parseInt(data[0].code) + 1;
     // Regla: si llega a X00000, pasa a X00001 (ej: 199999 -> 200001)
+    if (nextCode % 100000 === 0) nextCode++;
+    return String(nextCode);
+};
+
+// Ingeniería de Sistemas: Generador de código correlativo automático para inventario
+const generateNextInventoryCode = async () => {
+    const { data, error } = await _supabase
+        .from('inventory')
+        .select('code')
+        .order('code', { ascending: false })
+        .limit(1);
+
+    if (error || !data || data.length === 0) {
+        return "100001";
+    }
+
+    let nextCode = parseInt(data[0].code) + 1;
     if (nextCode % 100000 === 0) nextCode++;
     return String(nextCode);
 };
@@ -2697,8 +2714,9 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
             if (existingFieldError) {
                 console.error(`Error consultando inventario animal para campo ${label}:`, existingFieldError.message);
             } else if (!existingFieldInv) {
+                const code = await generateNextInventoryCode();
                 const { error: invInsertError } = await _supabase.from('inventory').insert({
-                    code: productCode,
+                    code: code,
                     product: label,
                     shed: String(shedNumber),
                     amount: numValue,
@@ -2719,21 +2737,63 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
 
     await Promise.all(invOps);
 
-    // Guardar registros de bultos por campo de suma
-    const bultosEntriesIngreso = Object.entries(productionData)
-        .filter(([key, value]) => key.startsWith('Bultos:') && parseFloat(value) > 0);
+    // Crear movimiento general del ingreso de animal
+    const { data: mvData, error: mvError } = await _supabase.from('movements').insert([{
+        name: productName,
+        type: isEdit ? "edicion_ingreso_animal" : "ingreso_animal",
+        amount: units,
+        farm: farm,
+        medit: "KG",
+        shed: String(shedNumber),
+        description: `Ingreso procesado en Galpón ${shedNumber}. Campos dinámicos validados de producción.`,
+        production_data: productionData,
+        created_at: getColombiaTimestamp()
+    }]).select('id').single();
 
-    if (bultosEntriesIngreso.length > 0 && recordData?.id) {
-        const bultosInsertsIngreso = bultosEntriesIngreso.map(([key, value]) => {
-            const fieldName = key.replace('Bultos: ', '');
-            return _supabase.from('animal_production_bultos').insert({
-                production_record_id: recordData.id,
-                event_type: 'ingreso',
-                field_name: fieldName,
-                bultos: parseInt(value)
+    if (mvError) console.warn('Warning: movimiento no creado:', mvError.message);
+
+    // Crear movimientos individuales por cada campo de tipo 'sum'
+    const moveOps = Object.entries(productionData)
+        .filter(([label, value]) => {
+            const num = parseFloat(value);
+            return sumLabels.has(label) && !isNaN(num) && num !== 0;
+        })
+        .map(async ([label, value]) => {
+            const numValue = parseFloat(value);
+            const bultosKey = `Bultos: ${label}`;
+            const bultos = productionData[bultosKey] ? parseInt(productionData[bultosKey]) : 0;
+            const desc = bultos > 0
+                ? `Ingreso de ${label}: ${numValue} KG (${bultos} bultos) en Galpón ${shedNumber}`
+                : `Ingreso de ${label}: ${numValue} KG en Galpón ${shedNumber}`;
+
+            await _supabase.from('movements').insert({
+                name: label,
+                type: isEdit ? "edicion_ingreso_animal" : "ingreso_animal",
+                amount: numValue,
+                farm: farm,
+                medit: "KG",
+                shed: String(shedNumber),
+                description: desc,
+                production_data: { [label]: numValue, ...(bultos > 0 ? { bultos } : {}) },
+                created_at: getColombiaTimestamp()
             });
         });
-        await Promise.all(bultosInsertsIngreso);
+
+    await Promise.all(moveOps);
+
+    // Asociar movement_id al primer registro de tipo ingreso de este lote (si existe)
+    if (mvData && mvData.id && batch && batch.id) {
+        const { data: firstRec, error: firstErr } = await _supabase
+            .from('animal_production_records')
+            .select('id')
+            .eq('batch_id', batch.id)
+            .eq('event_type', 'ingreso')
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+        if (firstRec && firstRec.id) {
+            await _supabase.from('animal_production_records').update({ movement_id: mvData.id }).eq('id', firstRec.id);
+        }
     }
 
     showToast(isEdit ? "Registro actualizado" : "Animales ingresados al galpón correctamente");
@@ -2871,14 +2931,7 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
         await Promise.all(bultosInsertsSalida);
     }
 
-    // 3. Actualizar stock global y ocupación del galpón
-    const { data: prodData } = await _supabase.from('products').select('unit, weigth').eq('code', productCode).single();
-    const newGlobalUnits = (prodData.unit || 0) - units;
-    const newGlobalWeight = (prodData.weigth || 0) - baseWeight;
-    await _supabase.from('products').update({ unit: newGlobalUnits, weigth: newGlobalWeight }).eq('code', productCode);
-    await updateShedUsage(farm, parseInt(shedNumber), units, false);
-
-    // Registrar movimiento histórico y asociarlo al primer registro de salida
+    // Crear movimiento general de la salida
     const { data: mvOut, error: mvOutErr } = await _supabase.from('movements').insert([{
         name: productName,
         type: 'salida_animal',
@@ -2892,8 +2945,37 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
     }]).select('id').single();
 
     if (mvOutErr) console.warn('Warning: movimiento salida no creado:', mvOutErr.message);
+
+    // Crear movimientos individuales por cada campo de tipo 'sum'
+    const moveOpsOut = Object.entries(productionData)
+        .filter(([label, value]) => {
+            const num = parseFloat(value);
+            return sumLabelsOut.has(label) && !isNaN(num) && num !== 0;
+        })
+        .map(async ([label, value]) => {
+            const numValue = parseFloat(value);
+            const bultosKey = `Bultos: ${label}`;
+            const bultos = productionData[bultosKey] ? parseInt(productionData[bultosKey]) : 0;
+            const desc = bultos > 0
+                ? `Salida de ${label}: ${numValue} KG (${bultos} bultos) en Galpón ${shedNumber}`
+                : `Salida de ${label}: ${numValue} KG en Galpón ${shedNumber}`;
+
+            await _supabase.from('movements').insert({
+                name: label,
+                type: 'salida_animal',
+                amount: numValue,
+                farm: farm,
+                medit: 'KG',
+                shed: String(shedNumber),
+                description: desc,
+                production_data: { [label]: numValue, ...(bultos > 0 ? { bultos } : {}) },
+                created_at: getColombiaTimestamp()
+            });
+        });
+
+    await Promise.all(moveOpsOut);
+
     if (mvOut && mvOut.id) {
-        // Asociar al primer registro de salida de este lote
         const { data: firstOut, error: firstOutErr } = await _supabase
             .from('animal_production_records')
             .select('id')
@@ -2906,6 +2988,7 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
             await _supabase.from('animal_production_records').update({ movement_id: mvOut.id }).eq('id', firstOut.id);
         }
     }
+
     // 4. Verificar si el lote debe cerrarse
     const { data: records, error: recordsError } = await _supabase.from('animal_production_records').select('event_type, units').eq('batch_id', batch.id);
     if (!recordsError) {
