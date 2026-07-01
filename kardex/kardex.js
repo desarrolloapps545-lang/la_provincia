@@ -68,7 +68,7 @@ async function updateProductDropdown() {
     const productSelect = document.getElementById('productSelect');
     const farmName = farmSelect.value;
 
-    let query = _supabase.from('inventory').select('product').order('product');
+    let query = _supabase.from('products').select('name').eq('inventory', true).order('name');
     if (farmName) query = query.eq('farm', farmName);
 
     const { data: invItems, error } = await query;
@@ -79,7 +79,7 @@ async function updateProductDropdown() {
         return;
     }
 
-    const uniqueProducts = [...new Set((invItems || []).map(i => i.product))];
+    const uniqueProducts = [...new Set((invItems || []).map(i => i.name))];
     productSelect.innerHTML = '<option value="">-- Seleccione un producto --</option>' + 
         uniqueProducts.map(p => `<option value="${p}">${p}</option>`).join('');
 }

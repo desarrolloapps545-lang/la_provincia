@@ -1083,7 +1083,44 @@ async function liquidarVenta() {
         if (error) {
             showToast("Error al liquidar venta: " + error.message, "error");
         } else {
-            showToast("Venta liquidada"); // No longer updating inventory from here
+            // Ingeniería de Backend: Actualizar inventario físico restando cantidades vendidas por medida
+            let invError = false;
+            for (const item of cart) {
+                const { data: invItem, error: invQueryErr } = await _supabase
+                    .from('products')
+                    .select('id, unit, weigth')
+                    .eq('inventory_code', item.code)
+                    .eq('inventory', true)
+                    .maybeSingle();
+
+                if (invQueryErr || !invItem) {
+                    console.warn('No se encontró item de inventario para código', item.code, invQueryErr);
+                    continue;
+                }
+
+                const newWeigth = { ...(invItem.weigth || {}) };
+                Object.entries(item.quantities || {}).forEach(([medit, qty]) => {
+                    newWeigth[medit] = Math.max(0, (newWeigth[medit] || 0) - qty);
+                });
+
+                const newUnit = Object.values(newWeigth)[0] || 0;
+
+                const { error: updInvErr } = await _supabase
+                    .from('products')
+                    .update({ unit: newUnit, weigth: newWeigth })
+                    .eq('id', invItem.id);
+
+                if (updInvErr) {
+                    invError = true;
+                    console.error('Error actualizando inventario en venta:', updInvErr);
+                }
+            }
+
+            if (invError) {
+                showToast("Venta liquidada, pero hubo problemas actualizando inventario", "error");
+            } else {
+                showToast("Venta liquidada");
+            }
             generatePDFInvoice(pdfData);
             initSalesProcess();
         }
@@ -1192,7 +1229,10 @@ function generatePDFInvoice(data) {
     if (data.type === 'compra') headers[0].splice(2, 0, "Proveedor");
 
     const body = data.items.map(item => {
-        const row = [item.code, item.name, item.quantity, `$ ${formatNumber(item.price)}`, `$ ${formatNumber(item.total)}` ];
+        const qtyText = item.quantities && item.pricingUnit && item.quantities[item.pricingUnit] !== undefined
+            ? `${formatNumber(item.quantities[item.pricingUnit])} ${item.pricingUnit}`
+            : (item.quantities ? Object.entries(item.quantities).map(([medit, qty]) => `${formatNumber(qty)} ${medit}`).join(' / ') : formatNumber(item.quantity || 0));
+        const row = [item.code, item.name, qtyText, `$ ${formatNumber(item.price)}`, `$ ${formatNumber(item.total)}` ];
         if (data.type === 'compra') row.splice(2, 0, item.providerName);
         return row;
     });
