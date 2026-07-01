@@ -98,7 +98,6 @@ async function loadMovements(productName, farmName) {
         .from('movements')
         .select('date_movement, type, amount, description, farm, created_at')
         .eq('name', productName)
-        .order('date_movement', { ascending: true })
         .order('created_at', { ascending: true });
 
     if (farmName) query = query.eq('farm', farmName);
@@ -119,9 +118,18 @@ async function loadMovements(productName, farmName) {
     let saldoAcumulado = 0;
     let html = '';
 
+    const formatDate = (dateStr) => {
+        if (!dateStr) return '-';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        return d.toLocaleDateString('es-CO', { year: 'numeric', month: '2-digit', day: '2-digit' }) + ' ' +
+               d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true });
+    };
+
     movements.forEach(m => {
         const esIngreso = m.type.toLowerCase() === 'ingreso';
         const cantidad = m.amount || 0;
+        const moveDate = formatDate(m.created_at || m.date_movement);
         
         if (esIngreso) {
             saldoAcumulado += cantidad;
@@ -131,7 +139,7 @@ async function loadMovements(productName, farmName) {
 
         html += `
             <tr>
-                <td>${m.date_movement}</td>
+                <td>${moveDate}</td>
                 <td>${m.farm || 'N/A'}</td>
                 <td><span class="${esIngreso ? 'text-ingreso' : 'text-salida'}">${m.type.toUpperCase()}</span></td>
                 <td>${m.description || '-'}</td>
