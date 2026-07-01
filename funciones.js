@@ -2545,7 +2545,7 @@ async function loadDynamicProductionFields(animalName, formType = 'ingreso') {
         
         return `
         <div class="input-group">
-            <label style="font-size: 10px; font-weight: 700; color: ${isInfo ? '#0984e3' : '#636e72'}; text-transform: uppercase;">${f.field_label}:</label>
+            <label style="font-size: 10px; font-weight: 700; color: ${isInfo ? '#0984e3' : '#636e72'}; text-transform: uppercase;">${f.field_label}${isSum ? ' KG' : ''}:</label>
             <div style="display: flex; gap: 8px; align-items: stretch;">
                 <input type="number" 
                        class="dynamic-prod-field ${isFormula ? 'result-field' : ''}" 
