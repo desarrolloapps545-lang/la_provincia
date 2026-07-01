@@ -358,15 +358,21 @@ async function loadInventoryForSales() {
             .from('products')
             .select('inventory_code, name, unit, medit, weigth')
             .eq('farm', selectedFarm)
-            .gt('unit', 0);
+            .eq('inventory', true);
         // Mapeo manual para asegurar la estructura de datos correcta
-        inv = (data || []).map(item => ({
-            code: item.inventory_code,
-            product: item.name,
-            amount: item.unit, // Stock principal para validaciones
-            medit: item.medit,
-            weigth: item.weigth // Objeto con pesos detallados para visualización
-        }));
+        inv = (data || []).map(item => {
+            const weigthValues = item.weigth && typeof item.weigth === 'object'
+                ? Object.values(item.weigth).filter(v => typeof v === 'number')
+                : [];
+            const amount = Math.max(item.unit || 0, ...weigthValues);
+            return {
+                code: item.inventory_code,
+                product: item.name,
+                amount,
+                medit: item.medit,
+                weigth: item.weigth // Objeto con pesos detallados para visualización
+            };
+        }).filter(i => i.amount > 0);
     }
 
     // Obtención de información comercial de la tabla products
@@ -622,13 +628,14 @@ function renderInventorySales(items) {
     };
 
     const formatSalePrice = (item) => {
-        if (item.sale_price && typeof item.sale_price === 'object') {
-            return Object.entries(item.sale_price)
-                .map(([unit, price]) => `$ ${formatNumber(price)} / ${unit}`)
+        const price = billingMode === 'venta' ? item.sale_price : item.buy_price;
+        if (price && typeof price === 'object') {
+            return Object.entries(price)
+                .map(([unit, val]) => `$ ${formatNumber(val)} / ${unit}`)
                 .join('<br>');
         }
-        // Fallback para precios antiguos o de compra
-        return `$ ${formatNumber(billingMode === 'venta' ? item.sale_price : item.buy_price)}`;
+        if (price) return `$ ${formatNumber(price)}`;
+        return 'No aplica';
     };
 
     list.innerHTML = availableItems.map(item => `
@@ -697,15 +704,23 @@ async function addToCart(code) {
         `).join('');
 
         if (pricingUnitSelector) pricingUnitSelector.classList.remove('hidden');
+        const salePriceInfo = (productPendingToCart.sale_price && typeof productPendingToCart.sale_price === 'object')
+            ? productPendingToCart.sale_price
+            : {};
         pricingUnitSelector.innerHTML = `
             <label style="font-size: 12px; color: #636e72; font-weight: bold;">Calcular precio basado en:</label>
             <div style="display: flex; gap: 15px; margin-top: 5px;">
-            ${Object.keys(prod.weigth).map((medit, index) => `
+            ${Object.keys(prod.weigth).map((medit, index) => {
+                const priceText = salePriceInfo[medit]
+                    ? ` ($${formatNumber(salePriceInfo[medit])})`
+                    : '';
+                return `
                 <label style="display: flex; align-items: center; gap: 5px; font-size: 14px;">
                     <input type="radio" name="pricingUnit" value="${medit}" ${index === 0 ? 'checked' : ''}>
-                    ${medit}
+                    ${medit}${priceText}
                 </label>
-            `).join('')}
+                `;
+            }).join('')}
             </div>
         `;
 
@@ -719,7 +734,12 @@ async function addToCart(code) {
             const pricingUnit = selectedRadio.value;
             const qtyInput = document.querySelector(`.sale-qty-input[data-medit="${pricingUnit}"]`);
             const quantity = parseFloat(qtyInput?.value) || 0;
-            const salePrice = productPendingToCart.sale_price[pricingUnit] || 0;
+            let salePrice = 0;
+            if (productPendingToCart.sale_price && typeof productPendingToCart.sale_price === 'object') {
+                salePrice = productPendingToCart.sale_price[pricingUnit] || 0;
+            } else if (typeof productPendingToCart.sale_price === 'number') {
+                salePrice = productPendingToCart.sale_price;
+            }
             const projection = quantity * salePrice;
 
             projectionContainer.textContent = `Proyección de Venta: $ ${formatNumber(projection)}`;
