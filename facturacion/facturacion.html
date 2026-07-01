@@ -202,31 +202,31 @@
 
                 <!-- Barra de Filtros (FASE 10.2) -->
                 <div id="facturasFilterBar" class="hidden" style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; align-items: flex-end;">
-                        <div>
-                            <label style="font-size: 12px; color: #636e72;">Fecha Inicio:</label>
-                            <input type="date" id="filterDateStart" class="sales-modal input" style="margin-bottom: 0;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; align-items: flex-end;">
+                            <div>
+                                <label style="font-size: 12px; color: #636e72;">Fecha Inicio:</label>
+                                <input type="date" id="filterDateStart" class="sales-modal input" style="margin-bottom: 0;">
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; color: #636e72;">Fecha Fin:</label>
+                                <input type="date" id="filterDateEnd" class="sales-modal input" style="margin-bottom: 0;">
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; color: #636e72;">Producto:</label>
+                                <select id="filterProduct" class="sales-modal select" style="margin-bottom: 0;">
+                                    <option value="" disabled selected hidden>Seleccione producto...</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; color: #636e72;">Categoría:</label>
+                                <select id="filterCategory" class="sales-modal select hidden" style="margin-bottom: 0;">
+                                    <option value="" disabled selected hidden>Seleccione categoría...</option>
+                                </select>
+                            </div>
+                            <div>
+                                <button class="action-btn" style="margin: 0; background: #2d3436; width: 100%; height: 43px;" onclick="loadFacturas(currentFacturasType, true)">Ver Todo</button>
+                            </div>
                         </div>
-                        <div>
-                            <label style="font-size: 12px; color: #636e72;">Fecha Fin:</label>
-                            <input type="date" id="filterDateEnd" class="sales-modal input" style="margin-bottom: 0;">
-                        </div>
-                        <div>
-                            <label style="font-size: 12px; color: #636e72;">Producto:</label>
-                            <select id="filterProduct" class="sales-modal select" style="margin-bottom: 0;">
-                                <option value="" disabled selected hidden>Seleccione producto...</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style="font-size: 12px; color: #636e72;">Categoría:</label>
-                            <select id="filterCategory" class="sales-modal select" style="margin-bottom: 0;">
-                                <option value="" disabled selected hidden>Seleccione categoría...</option>
-                            </select>
-                        </div>
-                        <div>
-                            <button class="action-btn" style="margin: 0; background: #2d3436; width: 100%; height: 43px;" onclick="loadFacturas(currentFacturasType, true)">Ver Todo</button>
-                        </div>
-                    </div>
                 </div>
 
                 <div id="facturasFilterIndicator" style="margin-bottom: 15px; font-weight: bold; color: #2d3436; font-size: 14px;">
@@ -266,8 +266,14 @@
             <h4>Agregar al Carrito</h4>
             <div id="qtyProductInfo" style="margin-bottom: 15px; font-size: 14px; color: #2d3436; line-height: 1.5;"></div>
             <form id="formAddQty" autocomplete="off">
-                <label id="qtyLabel" style="font-size: 12px; color: #636e72;">Cantidad:</label>
-                <input type="number" id="saleQtyInput" min="0.01" step="any" required placeholder="0">
+                <!-- Contenedor para inputs de cantidad dinámicos -->
+                <div id="qtyInputsContainer" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
+                    <!-- Fallback para productos con una sola unidad -->
+                    <label id="qtyLabel" style="font-size: 12px; color: #636e72;">Cantidad:</label>
+                    <input type="number" id="saleQtyInput" min="0.01" step="any" required placeholder="0">
+                </div>
+                <!-- Selector para la unidad de cobro -->
+                <div id="pricingUnitSelector" class="hidden" style="margin-top: 10px; margin-bottom: 15px;"></div>
                 <div id="itemProviderContainer" class="hidden" style="margin-top: 10px;">
                     <label style="font-size: 12px; color: #636e72;">Seleccione el Proveedor:</label>
                     <select id="itemProviderSelect">
@@ -277,6 +283,10 @@
                 <div id="priceEditContainer" class="hidden" style="margin-top: 10px;">
                     <label style="font-size: 12px; color: #636e72;">Precio de Compra:</label>
                     <input type="text" id="unitPriceInput" placeholder="$ 0">
+                </div>
+                <!-- Contenedor para la Proyección de Precio (FASE 10.4) -->
+                <div id="salePriceProjection" class="hidden" style="margin-top: 15px; padding: 10px; background: #f1f3f5; border-radius: 6px; text-align: center; font-weight: bold; color: #2d3436;">
+                    Proyección de Venta: $ 0
                 </div>
                 <div class="modal-btns">
                     <button type="submit">Agregar</button>
@@ -335,9 +345,20 @@
                     <option value="Cria">Cria</option><option value="Libra">Libra</option><option value="Unidad">Unidad</option>
                 </select>
                 <input type="number" id="prodUnit" placeholder="Unidad" step="any" required>
-                <div style="display: flex; gap: 10px;">
+                <div id="prodPriceContainer" style="display: flex; flex-direction: column; gap: 10px;">
                     <input type="text" id="prodBuyPrice" placeholder="Precio compra" required style="flex:1;">
-                    <input type="text" id="prodSalePrice" placeholder="Precio venta" required style="flex:1;">
+                    <div id="prodSalePriceContainer" style="display: flex; gap: 10px;">
+                        <input type="text" id="prodSalePrice" placeholder="Precio venta (Unidad)" style="flex:1;">
+                    </div>
+                </div>
+                <div id="prodSalePriceKgContainer" class="hidden" style="margin-top: -5px; margin-bottom: 15px;">
+                    <input type="text" id="prodSalePriceKg" placeholder="Precio venta (KG)" style="width: 100%;">
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
+                    <input type="checkbox" id="prodIsAnimal" style="width: auto; margin: 0;">
+                    <label for="prodIsAnimal" style="margin: 0; font-size: 14px; font-weight: normal; color: #636e72;">Animal</label>
+                    <input type="checkbox" id="prodForSale" style="width: auto; margin: 0;">
+                    <label for="prodForSale" style="margin: 0; font-size: 14px; font-weight: normal; color: #636e72;">¿Para venta?</label>
                 </div>
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>

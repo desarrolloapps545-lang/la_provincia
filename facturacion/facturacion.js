@@ -3,8 +3,7 @@ const SUPABASE_URL = "https://zvxnksnsovtlczausrvl.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2eG5rc25zb3Z0bGN6YXVzcnZsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTY3Nzc0NSwiZXhwIjoyMDkxMjUzNzQ1fQ.ai6JYAE43_HCmIXTR6McoTHkEi0wYuMszqCQn-pMhaA";
 const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let franchiseData = null; // Variable global para datos de la tabla 'province'
-let productCategoryMap = {}; // Mapeo de nombre de producto a categoría
+let franchiseData = null;
 let currentFacturasType = 'ventas';
 
 // Ingeniería de Frontend: Helper para Toasts
@@ -356,29 +355,36 @@ async function loadInventoryForSales() {
     let inv = [];
     if (billingMode === 'venta') {
         const { data } = await _supabase
-            .from('inventory')
-            .select('code, product, amount, medit, categorie') // Select all relevant fields
+            .from('products')
+            .select('inventory_code, name, unit, medit, weigth')
             .eq('farm', selectedFarm)
-            .gt('amount', 0);
-        const animalCats = ['animal', 'animales'];
-        // Filter out animal categories from inventory for sales
-        inv = (data || []).filter(item => !animalCats.includes(normalizeText(item.categorie)));
+            .gt('unit', 0);
+        // Mapeo manual para asegurar la estructura de datos correcta
+        inv = (data || []).map(item => ({
+            code: item.inventory_code,
+            product: item.name,
+            amount: item.unit, // Stock principal para validaciones
+            medit: item.medit,
+            weigth: item.weigth // Objeto con pesos detallados para visualización
+        }));
     }
 
     // Obtención de información comercial de la tabla products
     const { data: prods, error: prodErr } = await _supabase
         .from('products')
-        .select('name, sale_price, buy_price, code, categorie, medit');
+        .select('name, sale_price, buy_price, base_code, medit, animal, to_sale, weigth');
     
     if (!prodErr) {
         const priceMap = Object.fromEntries(prods.map(p => [p.name, p.sale_price]));
         const buyPriceMap = Object.fromEntries(prods.map(p => [p.name, p.buy_price]));
+        const animalSet = new Set(prods.filter(p => p.animal).map(p => p.name));
+        const toSaleSet = new Set(prods.filter(p => p.to_sale !== false).map(p => p.name)); // Solo si to_sale es true o null
 
         if (billingMode === 'venta') {
             inventoryData = inv.map(i => ({
                 ...i,
                 sale_price: priceMap[i.product] || 0
-            }));
+            })).filter(i => !animalSet.has(i.product) && toSaleSet.has(i.product));
         } else {
             // Ingeniería de Sistemas: Filtrar productos por proveedores seleccionados
             // Un producto es válido si su nombre está en la lista de productos de al menos uno de los proveedores elegidos
@@ -390,15 +396,16 @@ async function loadInventoryForSales() {
             });
 
             inventoryData = prods
+                .filter(p => p.animal !== true && p.to_sale !== false) // No animales, solo to_sale true/null
                 .filter(p => allowedProductNames.has(normalizeText(p.name)))
                 .map(p => ({
-                    code: p.code,
+                    code: p.base_code,
                     product: p.name,
                     amount: 999999,
                     medit: p.medit,
-                    categorie: p.categorie,
                     sale_price: p.sale_price,
-                    buy_price: p.buy_price
+                    buy_price: p.buy_price,
+                    weigth: p.weigth
                 }));
         }
         
@@ -604,13 +611,33 @@ function renderInventorySales(items) {
         return;
     }
 
+    const formatStockDisplay = (item) => {
+        if (item.weigth && typeof item.weigth === 'object' && Object.keys(item.weigth).length > 0) {
+            return Object.entries(item.weigth)
+                .map(([key, value]) => `${formatNumber(value)} ${key}`)
+                .join(' / ');
+        }
+        // Fallback si no hay `weigth`
+        return `${formatNumber(item.amount)} ${Array.isArray(item.medit) ? item.medit[0] : item.medit || ''}`;
+    };
+
+    const formatSalePrice = (item) => {
+        if (item.sale_price && typeof item.sale_price === 'object') {
+            return Object.entries(item.sale_price)
+                .map(([unit, price]) => `$ ${formatNumber(price)} / ${unit}`)
+                .join('<br>');
+        }
+        // Fallback para precios antiguos o de compra
+        return `$ ${formatNumber(billingMode === 'venta' ? item.sale_price : item.buy_price)}`;
+    };
+
     list.innerHTML = availableItems.map(item => `
         <div class="product-sale-card">
             <div class="product-info-mini">
                 <b>${item.product}</b>
-                ${billingMode === 'venta' ? `<p>Stock: ${formatNumber(item.amount)} ${item.medit || ''}</p>` : ''}
-                <p>${billingMode === 'venta' ? 'Precio Venta' : 'Precio Compra'}: $ ${formatNumber(billingMode === 'venta' ? item.sale_price : item.buy_price)}</p>
-                <p style="color:#00b894; font-size:10px;">Cód: ${item.code} | Cat: ${item.categorie}</p>
+                ${billingMode === 'venta' ? `<p>Stock: ${formatStockDisplay(item)}</p>` : ''}
+                <p>${billingMode === 'venta' ? 'Precios Venta:' : 'Precio Compra:'} <br> ${formatSalePrice(item)}</p>
+                <p style="color:#00b894; font-size:10px;">Cód: ${item.code}</p>
             </div>
             <button type="button" class="btn-add-cart" onclick="addToCart('${item.code}')">Agregar</button>
         </div>
@@ -630,28 +657,124 @@ async function addToCart(code) {
     if (!prod) return;
 
     productPendingToCart = prod;
+    const form = document.getElementById('formAddQty');
+    form.reset();
+
     const isVenta = billingMode === 'venta';
 
-    document.getElementById('qtyLabel').textContent = isVenta ? 'Cantidad a vender:' : 'Cantidad a comprar:';
-    document.getElementById('qtyProductInfo').innerHTML = `
-        <b>Producto:</b> ${prod.product}<br>
-        ${isVenta ? `<b>Stock disponible:</b> ${formatNumber(prod.amount)} ${prod.medit || ''}` : ''}
-    `;
+    const qtyInputsContainer = document.getElementById('qtyInputsContainer');
+    const pricingUnitSelector = document.getElementById('pricingUnitSelector');
+    const singleQtyLabel = document.getElementById('qtyLabel');
+    const singleQtyInput = document.getElementById('saleQtyInput');
 
+    qtyInputsContainer.innerHTML = ''; // Limpiar contenedor
+
+    // Ingeniería de Sistemas: Verificación de existencia de elementos para evitar errores de null.
+    if (pricingUnitSelector) {
+        pricingUnitSelector.innerHTML = '';
+        pricingUnitSelector.classList.add('hidden');
+    }
+    
     const priceEditContainer = document.getElementById('priceEditContainer');
     const priceInput = document.getElementById('unitPriceInput');
     const providerContainer = document.getElementById('itemProviderContainer');
     const providerSelect = document.getElementById('itemProviderSelect');
+    const projectionContainer = document.getElementById('salePriceProjection');
 
-    const qtyInput = document.getElementById('saleQtyInput');
-    qtyInput.value = 1;
-    
+    // Lógica para múltiples unidades (weigth JSONB)
+    if (isVenta && prod.weigth && typeof prod.weigth === 'object' && Object.keys(prod.weigth).length > 0) {
+        if (singleQtyLabel) singleQtyLabel.classList.add('hidden');
+        if (singleQtyInput) singleQtyInput.classList.add('hidden');
+
+        document.getElementById('qtyProductInfo').innerHTML = `<b>Producto:</b> ${prod.product}`;
+
+        qtyInputsContainer.innerHTML = Object.entries(prod.weigth).map(([medit, stock]) => `
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #636e72;">Unidades a vender (${medit}):</label>
+                <input type="number" class="sale-qty-input" data-medit="${medit}" placeholder="0" data-max="${stock}" step="any" min="0">
+                <div style="font-size: 11px; color: #636e72; text-align: right;">Disp: ${formatNumber(stock)}</div>
+            </div>
+        `).join('');
+
+        if (pricingUnitSelector) pricingUnitSelector.classList.remove('hidden');
+        pricingUnitSelector.innerHTML = `
+            <label style="font-size: 12px; color: #636e72; font-weight: bold;">Calcular precio basado en:</label>
+            <div style="display: flex; gap: 15px; margin-top: 5px;">
+            ${Object.keys(prod.weigth).map((medit, index) => `
+                <label style="display: flex; align-items: center; gap: 5px; font-size: 14px;">
+                    <input type="radio" name="pricingUnit" value="${medit}" ${index === 0 ? 'checked' : ''}>
+                    ${medit}
+                </label>
+            `).join('')}
+            </div>
+        `;
+
+        // Ingeniería de Frontend: Lógica de proyección de precio en tiempo real
+        projectionContainer.classList.remove('hidden');
+
+        const updateProjection = () => {
+            const selectedRadio = document.querySelector('input[name="pricingUnit"]:checked');
+            if (!selectedRadio) return;
+            
+            const pricingUnit = selectedRadio.value;
+            const qtyInput = document.querySelector(`.sale-qty-input[data-medit="${pricingUnit}"]`);
+            const quantity = parseFloat(qtyInput?.value) || 0;
+            const salePrice = productPendingToCart.sale_price[pricingUnit] || 0;
+            const projection = quantity * salePrice;
+
+            projectionContainer.textContent = `Proyección de Venta: $ ${formatNumber(projection)}`;
+        };
+
+        // Añadir listeners a todos los inputs relevantes
+        document.querySelectorAll('.sale-qty-input, input[name="pricingUnit"]').forEach(input => {
+            input.addEventListener('input', updateProjection);
+            input.addEventListener('change', updateProjection); // Para los radio buttons
+        });
+
+        updateProjection(); // Llamada inicial
+
+    } else {
+        // Lógica original para productos con una sola unidad
+        if (singleQtyLabel) singleQtyLabel.classList.remove('hidden');
+        if (singleQtyInput) singleQtyInput.classList.remove('hidden');
+        singleQtyLabel.textContent = isVenta ? 'Cantidad a vender:' : 'Cantidad a comprar:';
+        document.getElementById('qtyProductInfo').innerHTML = `
+            <b>Producto:</b> ${prod.product}<br>
+            ${isVenta ? `<b>Stock disponible:</b> ${formatNumber(prod.amount)} ${prod.medit || ''}` : ''}
+        `;
+        singleQtyInput.value = 1;
+        projectionContainer.classList.add('hidden'); // Ocultar si no es venta con múltiples medidas
+    }
+
     if (isVenta) {
-        qtyInput.max = prod.amount;
         priceEditContainer.classList.add('hidden');
         providerContainer.classList.add('hidden');
+
+        // Validar que la cantidad no exceda el stock para cada input dinámico
+        document.querySelectorAll('.sale-qty-input').forEach(input => {
+            input.addEventListener('input', () => {
+                const max = parseFloat(input.dataset.max) || 0;
+                if (parseFloat(input.value) > max) {
+                    input.value = max;
+                    showToast("La cantidad no puede exceder el stock disponible.", "error");
+                }
+            });
+        });
+
+        // Validar también el input único
+        // Ingeniería de Sistemas: Verificación de existencia del elemento para evitar error de null.
+        if (singleQtyInput) {
+            singleQtyInput.max = prod.amount;
+            singleQtyInput.addEventListener('input', () => {
+                if (parseFloat(singleQtyInput.value) > prod.amount) {
+                    singleQtyInput.value = prod.amount;
+                    showToast("La cantidad no puede exceder el stock disponible.", "error");
+                }
+            });
+        }
+
     } else {
-        qtyInput.removeAttribute('max');
+        singleQtyInput.removeAttribute('max');
         priceEditContainer.classList.remove('hidden');
         priceInput.value = formatNumber(prod.buy_price || 0);
         
@@ -682,11 +805,32 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!productPendingToCart) return;
 
-    const quantity = parseFloat(document.getElementById('saleQtyInput').value);
     const isVenta = billingMode === 'venta';
+    let quantities = {};
+    let totalQuantity = 0;
+    let pricingUnit = null;
 
-    if (isNaN(quantity) || quantity <= 0) return showToast("Ingrese una cantidad válida", "error");
-    
+    if (isVenta && productPendingToCart.weigth && typeof productPendingToCart.weigth === 'object') {
+        document.querySelectorAll('.sale-qty-input').forEach(input => {
+            const value = parseFloat(input.value) || 0;
+            if (value > 0) {
+                quantities[input.dataset.medit] = value;
+                totalQuantity += value; // Sumar para validación simple
+            }
+        });
+        const selectedRadio = document.querySelector('input[name="pricingUnit"]:checked');
+        if (selectedRadio) {
+            pricingUnit = selectedRadio.value;
+        }
+    } else {
+        const qty = parseFloat(document.getElementById('saleQtyInput').value);
+        quantities[productPendingToCart.medit[0] || 'Unidad'] = qty;
+        totalQuantity = qty;
+        pricingUnit = productPendingToCart.medit[0] || 'Unidad';
+    }
+
+    if (totalQuantity <= 0) return showToast("Ingrese una cantidad válida", "error");
+
     let providerName = "";
     let providerNit = null;
 
@@ -695,38 +839,49 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
         if (!pSelect.value) return showToast("Debe seleccionar un proveedor", "error");
         providerName = pSelect.value;
         providerNit = pSelect.options[pSelect.selectedIndex].dataset.nit;
-    } else if (quantity > productPendingToCart.amount) {
-        return showToast("La cantidad excede el stock de la granja", "error");
-    }
+    } 
 
     // En compras permitimos editar el precio, en ventas usamos el sale_price fijo
     let unitPrice;
     if (isVenta) {
-        unitPrice = productPendingToCart.sale_price;
+        // FASE 11: Obtener el precio según la unidad seleccionada
+        if (productPendingToCart.sale_price && typeof productPendingToCart.sale_price === 'object') {
+            unitPrice = productPendingToCart.sale_price[pricingUnit] || 0;
+        } else {
+            unitPrice = productPendingToCart.sale_price || 0; // Fallback
+        }
     } else {
         unitPrice = parseInt(document.getElementById('unitPriceInput').value.replace(/\D/g, '')) || 0;
         
         // Ingeniería de Backend: Actualizar precio de compra maestro en la tabla 'products'
         const { error: updatePriceErr } = await _supabase
             .from('products')
-            .update({ buy_price: unitPrice })
-            .eq('code', productPendingToCart.code);
+            .update({ buy_price: unitPrice, total: 0 }) // total se recalcula o se maneja en otro lado, lo ponemos a 0 para consistencia
+            .eq('base_code', productPendingToCart.code);
         
         if (updatePriceErr) console.error("Error al actualizar precio maestro:", updatePriceErr);
     }
 
-    const existing = cart.find(item => item.code === productPendingToCart.code);
+    // El `code` es el `inventory_code` para ventas, y `base_code` para compras
+    const existing = cart.find(item => String(item.code) === String(productPendingToCart.code));
+    const quantityForPriceCalc = parseFloat(quantities[pricingUnit]) || 0;
+
     if (existing) {
-        if (isVenta && existing.quantity + quantity > productPendingToCart.amount) return showToast("La cantidad total en el carrito excede el stock", "error");
-        existing.quantity += quantity;
-        existing.total = existing.quantity * existing.price;
+        // Actualizamos las cantidades para cada medida
+        Object.entries(quantities).forEach(([medit, qty]) => {
+            existing.quantities[medit] = (existing.quantities[medit] || 0) + qty;
+        });
+        // Recalcular el total basado en la nueva cantidad de la unidad de precio
+        existing.quantity += quantityForPriceCalc;
+        existing.total = existing.quantity * existing.price; // Asume que el precio unitario no cambia
     } else {
         cart.push({
             code: productPendingToCart.code,
             name: productPendingToCart.product,
-            quantity: quantity,
+            quantities: quantities, // Guardamos el objeto de cantidades
+            quantity: quantityForPriceCalc, // Cantidad base para el cálculo del precio
             price: unitPrice,
-            total: quantity * unitPrice,
+            total: quantityForPriceCalc * unitPrice,
             providerName: providerName,
             providerNit: providerNit
         });
@@ -752,12 +907,23 @@ function updateCartUI() {
         return;
     }
 
+    const formatQuantities = (item) => {
+        if (item.quantities && Object.keys(item.quantities).length > 1) {
+            return Object.entries(item.quantities).map(([medit, qty]) => `${qty} ${medit}`).join('<br>');
+        } else if (item.quantities) {
+            const [medit, qty] = Object.entries(item.quantities)[0];
+            return `${qty} ${medit}`;
+        }
+        // Fallback para items antiguos o de una sola unidad
+        return item.quantity;
+    };
+
     tbody.innerHTML = cart.map((item, index) => `
         <tr class="cart-item-row">
             <td><small>${item.code}</small></td>
             <td>${item.name}</td>
             ${showProviderCol ? `<td><small>${item.providerName}</small></td>` : ''}
-            <td>${item.quantity}</td>
+            <td>${formatQuantities(item)}</td>
             <td>$ ${formatNumber(item.price)}</td>
             <td>$ ${formatNumber(item.total)}</td>
             <td><button class="btn-cancel" style="padding:2px 5px; width:auto;" onclick="removeFromCart(${index})">×</button></td>
@@ -816,7 +982,6 @@ async function liquidarVenta() {
             products_value: cart.map(item => item.price),
             codes: cart.map(item => item.code),
             products: cart.map(item => item.name),
-            categorie: cart.map(item => inventoryData.find(i => i.code === item.code)?.categorie || 'N/A'),
             client: selectedEntity.name,
             client_cedula: parseInt(selectedEntity.cedula || selectedEntity.nit),
             total_to_pay: totalGeneral,
@@ -859,7 +1024,6 @@ async function liquidarVenta() {
             product: cart.map(item => item.name),
             code: cart.map(item => item.code),
             product_value: cart.map(item => item.price),
-            categorie: cart.map(item => inventoryData.find(i => i.code === item.code)?.categorie || 'N/A'),
             provider: cart.map(item => item.providerName),
             nit: cart.map(item => parseInt(item.providerNit)),
             total_payed: totalGeneral,
@@ -965,6 +1129,7 @@ function generatePDFInvoice(data) {
         head: headers,
         body: body,
         theme: 'grid',
+        styles: { cellPadding: 3, fontSize: 9, lineColor: [178, 190, 195], lineWidth: 0.1 }, // Color #b2bec3
         headStyles: { fillColor: primaryColor },
         styles: { fontSize: 9 }
     });
@@ -1004,53 +1169,25 @@ async function prepareFacturasView(type) {
     const catSelect = document.getElementById('filterCategory');
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>';
     prodSelect.disabled = true;
-    catSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione categoría...</option><option value="all">Todas</option>';
+    catSelect.classList.add('hidden'); // Ocultar selector de categoría
 
     document.getElementById('facturasFilterBar').classList.remove('hidden');
     document.getElementById('facturasTableContainer').innerHTML = '<p style="padding:40px; text-align:center; color:#636e72;">Filtre para ver las facturas</p>';
     
-    const { data: categories } = await _supabase.from('categories').select('name').order('name');
-    categories?.forEach(c => {
+    // Cargar productos para filtro
+    const { data: products } = await _supabase.from('products').select('name').order('name');
+    products?.forEach(p => {
         const opt = document.createElement('option');
-        opt.value = c.name;
-        opt.textContent = c.name;
-        catSelect.appendChild(opt);
+        opt.value = p.name;
+        opt.textContent = p.name;
+        prodSelect.appendChild(opt);
     });
 
     // Filtrado automático al cambiar cualquier input
-    ['filterDateStart', 'filterDateEnd', 'filterProduct', 'filterCategory'].forEach(id => {
+    ['filterDateStart', 'filterDateEnd', 'filterProduct'].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
-            el.onchange = async () => {
-                if (id === 'filterCategory') {
-                    const category = el.value;
-                    const pSelect = document.getElementById('filterProduct');
-                    if (category === "all") { // Opción "Todas" en categorías
-                        pSelect.innerHTML = '<option value="" selected>Todos</option>';
-                        pSelect.disabled = true;
-                        pSelect.value = "";
-                    } else if (category === "") { // Placeholder
-                        pSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>';
-                        pSelect.disabled = true;
-                        pSelect.value = "";
-                    } else {
-                        pSelect.disabled = false;
-                        pSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>';
-                        const { data: products } = await _supabase
-                            .from('products')
-                            .select('name')
-                            .eq('categorie', category)
-                            .order('name');
-                        products?.forEach(p => {
-                            const opt = document.createElement('option');
-                            opt.value = p.name;
-                            opt.textContent = p.name;
-                            pSelect.appendChild(opt);
-                        });
-                    }
-                }
-                loadFacturas(type, false);
-            };
+            el.onchange = () => loadFacturas(type, false);
             if (id.includes('Date')) el.oninput = () => loadFacturas(type, false);
         }
     });
@@ -1065,9 +1202,8 @@ async function loadFacturas(type, viewAll = false) {
     const dateStart = document.getElementById('filterDateStart').value;
     const dateEnd = document.getElementById('filterDateEnd').value;
     const productFilter = document.getElementById('filterProduct').value;
-    const category = document.getElementById('filterCategory').value;
 
-    if (!viewAll && !dateStart && !dateEnd && !productFilter && (category === "" || !category)) {
+    if (!viewAll && !dateStart && !dateEnd && !productFilter) {
         container.innerHTML = '<p style="padding:40px; text-align:center; color:#636e72;">Filtre para ver las facturas</p>';
         return;
     }
@@ -1085,7 +1221,6 @@ async function loadFacturas(type, viewAll = false) {
         const dateStart = document.getElementById('filterDateStart').value;
         const dateEnd = document.getElementById('filterDateEnd').value;
         const productFilter = document.getElementById('filterProduct').value; // Valor exacto del select
-        const category = document.getElementById('filterCategory').value;
 
         data = data.filter(item => {
             const itemDate = item.created_at.split(' ')[0];
@@ -1097,12 +1232,6 @@ async function loadFacturas(type, viewAll = false) {
 
             // Filtro de Producto
             if (productFilter && !itemsList.some(p => p === productFilter)) return false;
-
-            // Filtro de Categoría
-            if (category && category !== "all") {
-                const itemCategories = item.categorie || [];
-                if (!itemCategories.includes(category)) return false;
-            }
 
             return true;
         });
@@ -1191,7 +1320,7 @@ function downloadStoredInvoice(item, type) {
     const isVenta = type === 'ventas';
     // Reconstruir items para el generador de PDF
     const products = isVenta ? item.products : item.product;
-    const codes = item.codes || item.code;
+    const codes = isVenta ? item.codes : (item.code || []);
     const values = item.products_value || item.product_value;
     const providers = item.provider || [];
 
@@ -1236,7 +1365,6 @@ function showModal(id) {
     document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
     if(id === 'modalCreateSupplier') loadProductsForSelect();
-    if(id === 'modalCreateProduct') loadCategoriesForSelect();
 }
 
 // Bloqueo de cierre por clic fuera para modal de selección de entidades
@@ -1357,6 +1485,10 @@ async function loadProductsForSelect() {
     });
 });
 
+document.getElementById('prodUnit')?.addEventListener('input', () => {
+    if (typeof updateProductTotalProjection === 'function') updateProductTotalProjection();
+});
+
 /**
  * Manejador para el registro de nuevos proveedores desde Facturación
  */
@@ -1383,16 +1515,34 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
     e.preventDefault();
     const hasWeight = document.getElementById('prodHasWeight')?.checked;
     const isAnimal = document.getElementById('prodIsAnimal')?.checked || false;
+    const toSale = document.getElementById('prodForSale')?.checked !== false;
+
+    const baseCode = document.getElementById('prodCode').value;
+
+    // Validación para prevenir duplicados de productos base
+    const { data: existing, error: checkError } = await _supabase
+        .from('products')
+        .select('base_code')
+        .eq('base_code', baseCode)
+        .eq('inventory', false)
+        .maybeSingle();
+
+    if (checkError) return showToast("Error de validación: " + checkError.message, "error");
+    if (existing) return showToast(`Error: Ya existe una definición de producto con el código ${baseCode}.`, "error");
+
     const productData = {
-        code: document.getElementById('prodCode').value,
+        base_code: baseCode,
+        inventory_code: null, // No es un item de inventario
         name: document.getElementById('prodName').value,
         unit: parseFloat(document.getElementById('prodUnit').value) || 0,
         medit: document.getElementById('prodMedit').value,
-        buy_price: parseInt(document.getElementById('prodBuyPrice').value.replace(/\./g, '')) || 0,
-        sale_price: parseInt(document.getElementById('prodSalePrice').value.replace(/\./g, '')) || 0,
+        buy_price: isAnimal ? null : (parseInt(document.getElementById('prodBuyPrice').value.replace(/\./g, '')) || 0),
+        sale_price: isAnimal ? null : (parseInt(document.getElementById('prodSalePrice').value.replace(/\./g, '')) || 0),
         created_at: getColombiaTimestamp(),
         weigth: hasWeight ? (parseFloat(document.getElementById('prodWeight').value) || 0) : null,
-        animal: isAnimal
+        animal: isAnimal,
+        to_sale: toSale,
+        inventory: false // Es una definición de producto
     };
     const { error } = await _supabase.from('products').insert([productData]);
     if (error) showToast("Error: " + error.message, "error");
@@ -1409,9 +1559,15 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
 // Listeners para el nuevo campo de peso en el módulo de facturación
 document.getElementById('prodHasWeight')?.addEventListener('change', function() {
     const container = document.getElementById('prodWeightContainer');
+    const salePriceKgContainer = document.getElementById('prodSalePriceKgContainer');
+    const forSale = document.getElementById('prodForSale')?.checked;
+
     if (container) {
         container.classList.toggle('hidden', !this.checked);
         if (!this.checked) document.getElementById('prodWeight').value = "";
+    }
+    if (salePriceKgContainer) {
+        salePriceKgContainer.classList.toggle('hidden', !this.checked || !forSale);
     }
 });
 

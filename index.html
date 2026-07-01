@@ -46,7 +46,7 @@
                 <button id="btnGestionUsuarios" class="nav-btn">Gestión de Usuarios</button>
                 <button id="btnGestionGranjas" class="nav-btn">Gestión de Granjas</button>
                 <button id="btnGestionProductos" class="nav-btn">Productos</button>
-                <button id="btnGestionProveedores" class="nav-btn">Proveedores</button>
+                <button id="btnGestionProveedores" class="nav-btn">Proveedores</button> 
                 <button id="btnGestionInventario" class="nav-btn">Inventario</button>
                 <button id="btnFacturacion" class="nav-btn" style="background: #e17055;" onclick="window.open('facturacion/facturacion.html', '_blank')">Facturación</button>
             </div>
@@ -96,52 +96,37 @@
             <section id="productsView" class="view-section hidden">
                 <div class="view-header">
                     <h3>Gestión de Productos</h3>
-                    <div class="action-bar" style="display: flex; gap: 10px; align-items: center;">
-                        <input type="text" id="searchProductInput" placeholder="Buscar por nombre o código..." class="action-btn" style="background: white; color: #2d3436; border: 1px solid #dfe6e9; width: 250px;">
-                        <button class="action-btn" onclick="showModal('modalCreateProduct')">Agregar productos</button>
-                    </div>
                 </div>
-                <div id="productsTableContainer" class="table-container"></div>
-            </section>
-
-            <section id="inventoryView" class="view-section hidden">
-                <div class="view-header">
-                    <h3>Inventario General</h3>
-                    <div class="action-bar" style="display: flex; gap: 10px; flex-wrap: nowrap;">
-                        <button class="action-btn" style="background: #0984e3;" onclick="renderInventoryView('products')">Productos</button>
-                        <button class="action-btn" style="background: #e17055;" onclick="renderInventoryView('sheds')">Galpones</button>
-                        <button class="action-btn" onclick="window.open('kardex/kardex.html', '_blank')">Kardex</button>
-                    </div>
-                </div>
-                <!-- FASE 11.2: Barra de Filtros de Inventario -->
-                <div id="inventoryFilterBar" class="action-bar hidden" style="margin-bottom: 20px; display: flex; flex-wrap: nowrap; gap: 10px; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dfe6e9; align-items: center; overflow-x: auto;">
+                <!-- Barra de Filtros de Productos (antes en Inventario) -->
+                <div id="productFilterBar" class="action-bar" style="margin-bottom: 20px; display: flex; flex-wrap: nowrap; gap: 10px; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dfe6e9; align-items: center; overflow-x: auto;">
                     <input type="text" id="searchInventoryInput" placeholder="Buscar por nombre o código..." class="action-btn" style="background: white; color: #2d3436; border: 1px solid #dfe6e9; width: 220px; height: 38px; margin: 0;">
                     
                     <select id="filterInventoryFarm" class="action-btn" style="background: white; color: #2d3436; border: 1px solid #dfe6e9; height: 38px; margin: 0;">
                         <option value="" disabled selected hidden>Filtrar por granja...</option>
                         <option value="all">Todas</option>
                     </select>
-
-                    <select id="filterInventoryCategory" class="action-btn" style="background: white; color: #2d3436; border: 1px solid #dfe6e9; height: 38px; margin: 0;">
-                        <option value="" disabled selected hidden>Filtrar por categoría...</option>
-                        <option value="all">Todas</option>
-                    </select>
-
-                    <select id="filterInventoryAnimal" class="action-btn hidden" style="background: white; color: #2d3436; border: 1px solid #dfe6e9; height: 38px; margin: 0;">
-                        <option value="" disabled selected hidden>Filtrar por animal...</option>
-                        <option value="all">Ver todos</option>
-                    </select>
-
+                    
                     <select id="filterInventoryShed" class="action-btn hidden" style="background: white; color: #2d3436; border: 1px solid #dfe6e9; height: 38px; margin: 0;">
                         <option value="" disabled selected hidden>Filtrar por galpón...</option>
                         <option value="all">Ver todos los galpones</option>
                     </select>
 
                     <input type="date" id="filterInventoryDate" class="action-btn" style="background: white; color: #2d3436; border: 1px solid #dfe6e9; height: 38px; margin: 0;">
-
+                    
+                    <button class="action-btn" onclick="showModal('modalBaseProducts')">Productos</button>
                     <button id="btnInventoryInbound" class="action-btn" style="height: 38px; margin: 0; white-space: nowrap; padding: 0 15px;" onclick="showModal('modalInboundInventory')">Ingresar producto</button>
-                    <button id="btnInventoryOutbound" class="action-btn" style="height: 38px; margin: 0; white-space: nowrap; padding: 0 15px;" onclick="showModal('modalOutboundInventory')">Sacar producto</button>
-                    <button id="btnInventoryShed" class="action-btn hidden" style="background: #2d3436; height: 38px; margin: 0; white-space: nowrap; padding: 0 15px;" onclick="showModal('modalCreateShed')">Registrar Galpón</button>
+                    <button id="btnInventoryOutbound" class="action-btn" style="background: #e17055; height: 38px; margin: 0; white-space: nowrap; padding: 0 15px;" onclick="showModal('modalOutboundInventory')">Sacar inventario</button>
+                    <button class="action-btn" onclick="window.open('kardex/kardex.html', '_blank')" style="background: #6c5ce7;">Kardex</button>
+                </div>
+                <div id="productsTableContainer" class="table-container"></div>
+            </section>
+
+            <section id="inventoryView" class="view-section hidden">
+                <div class="view-header">
+                    <h3>Gestión de Galpones</h3>
+                    <div class="action-bar" style="display: flex; gap: 10px; flex-wrap: nowrap;">
+                        <button id="btnInventoryShed" class="action-btn" style="background: #2d3436; height: 38px; margin: 0; white-space: nowrap; padding: 0 15px;" onclick="showModal('modalCreateShed')">Registrar Galpón</button>
+                    </div>
                 </div>
                 <div id="inventoryTableContainer" class="table-container"></div>
             </section>
@@ -152,6 +137,7 @@
     <div id="modalOverlay" class="modal-overlay hidden">
         <!-- Crear Usuario -->
         <div id="modalCreateUser" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4>Nuevo Usuario</h4>
             <form id="formCreateUser" autocomplete="off">
                 <input type="text" id="newName" placeholder="Nombre completo" required>
@@ -169,6 +155,7 @@
 
         <!-- Actualizar Contraseña -->
         <div id="modalUpdatePass" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4>Cambiar Contraseña</h4>
             <form id="formUpdatePass" autocomplete="off">
                 <input type="password" id="updPass" placeholder="Nueva contraseña" required>
@@ -179,6 +166,7 @@
 
         <!-- Actualizar Datos -->
         <div id="modalUpdateData" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4>Mis Datos</h4>
             <form id="formUpdateData" autocomplete="off">
                 <input type="text" id="updName" placeholder="Nombre completo">
@@ -191,12 +179,12 @@
 
         <!-- Crear Granja (FASE 4.1) -->
         <div id="modalCreateFarm" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4>Nueva Granja</h4>
             <form id="formCreateFarm" autocomplete="off">
                 <input type="text" id="farmName" placeholder="Nombre de la granja" required>
                 <input type="text" id="farmAddress" placeholder="Dirección" required>
-                <input type="text" id="farmAnimals" placeholder="Tipos de animales (ej: pollos, cerdos, vacas)" required>
-                <input type="number" id="farmCapacity" placeholder="Capacidad máxima total de animales" required>
+                <input type="number" id="farmCapacity" placeholder="Capacidad máxima de animales" required>
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>
                     <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
@@ -206,6 +194,7 @@
 
         <!-- Registrar Proveedor (FASE 5.1) -->
         <div id="modalCreateSupplier" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4>Nuevo Proveedor</h4>
             <form id="formCreateSupplier" autocomplete="off">
                 <input type="text" id="supName" placeholder="Nombre del proveedor" required>
@@ -221,6 +210,7 @@
 
         <!-- Agregar Producto (FASE 5.2) -->
         <div id="modalCreateProduct" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4>Nuevo Producto</h4>
             <form id="formCreateProduct" autocomplete="off">
                 <input type="text" id="prodCode" placeholder="Código (Automático)" readonly style="background: #f1f3f5; cursor: not-allowed;">
@@ -235,27 +225,36 @@
                     <option value="Unidad">Unidad</option>
                 </select>
                 <input type="number" id="prodUnit" placeholder="Unidad" step="any" required>
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                    <input type="checkbox" id="prodHasWeight" style="width: auto; margin: 0;">
-                    <label for="prodHasWeight" style="margin: 0; font-size: 14px; font-weight: normal; color: #636e72;">¿Registrar peso?</label>
+                <div style="display: flex; gap: 20px; margin-bottom: 10px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="prodHasWeight" style="width: auto; margin: 0;">
+                        <label for="prodHasWeight" style="margin: 0; font-size: 14px; font-weight: normal; color: #636e72;">¿Registrar peso?</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="prodIsAnimal" style="width: auto; margin: 0;">
+                        <label for="prodIsAnimal" style="margin: 0; font-size: 14px; font-weight: normal; color: #636e72;">Animal</label>
+                    </div>
+                    <div id="prodForSaleContainer" style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="prodForSale" style="width: auto; margin: 0;">
+                        <label for="prodForSale" style="margin: 0; font-size: 14px; font-weight: normal; color: #636e72;">¿Para venta?</label>
+                    </div>
                 </div>
                 <div id="prodWeightContainer" class="hidden" style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                     <input type="number" id="prodWeight" placeholder="0" step="any" style="margin-bottom: 0; flex: 1;">
                     <span style="font-size: 14px; font-weight: bold; color: #2d3436;">KG</span>
                 </div>
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                    <input type="checkbox" id="prodIsAnimal" style="width: auto; margin: 0;">
-                    <label for="prodIsAnimal" style="margin: 0; font-size: 14px; font-weight: normal; color: #636e72;">Animal</label>
+                <!-- FASE 12: Reorganización de precios -->
+                <div id="prodSalePriceContainer" class="hidden" style="margin-bottom: 10px;">
+                    <input type="text" id="prodSalePrice" placeholder="Precio venta">
                 </div>
-                <div style="display: flex; gap: 10px;">
-                    <div style="flex: 1;">
-                        <input type="text" id="prodBuyPrice" placeholder="Precio compra" required>
-                    </div>
-                    <div style="flex: 1;">
-                        <input type="text" id="prodSalePrice" placeholder="Precio venta" required>
-                    </div>
+                <div id="prodSalePriceKgContainer" class="hidden" style="margin-bottom: 15px;">
+                    <input type="text" id="prodSalePriceKg" placeholder="Precio venta (KG)" style="width: 100%;">
                 </div>
-                <div style="margin-top: 5px; font-size: 14px; font-weight: bold; color: #00b894;">
+
+                <div id="prodBuyPriceContainer" style="margin-bottom: 15px;">
+                    <input type="text" id="prodBuyPrice" placeholder="Precio compra" style="width: 100%;">
+                </div>
+                <div style="margin-top: -10px; margin-bottom: 15px; font-size: 14px; font-weight: bold; color: #00b894;">
                     Costo Total Proyectado: <span id="prodTotalProjection">$ 0</span>
                 </div>
                 <div class="modal-btns">
@@ -265,8 +264,23 @@
             </form>
         </div>
 
+        <!-- Modal para mostrar Productos Base (Definiciones) -->
+        <div id="modalBaseProducts" class="modal hidden" style="width: 80vw; max-width: 900px;">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4>Definición de Productos</h4>
+            <div class="action-bar" style="justify-content: flex-end; margin-bottom: 15px;">
+                <button class="action-btn" onclick="showModal('modalCreateProduct')">Definir Nuevo Producto</button>
+            </div>
+            <div id="baseProductsListContainer" class="table-container" style="max-height: 60vh; overflow-y: auto;">
+                <!-- Contenido dinámico de la tabla de productos base -->
+            </div>
+        </div>
+
+
+
         <!-- Crear Categoría (FASE 5.3) -->
         <div id="modalCreateCategory" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4>Nueva Categoría</h4>
             <form id="formCreateCategory" autocomplete="off">
                 <input type="text" id="catName" placeholder="Nombre de la categoría" required>
@@ -298,7 +312,7 @@
                 <label style="font-size: 12px; color: #636e72;">Producto:</label>
                 <select id="inboundProduct" required><option value="" disabled selected hidden>Seleccione producto...</option></select>
                 
-                <div id="inboundExtraFields" class="hidden">
+                <div id="inboundExtraFields" class="hidden" style="margin-top: 15px;">
                     <label style="font-size: 12px; color: #636e72;">Granja de destino:</label>
                     <select id="inboundFarm" required><option value="">Seleccione granja...</option></select>
 
@@ -308,20 +322,8 @@
                         <div id="inboundShedInfo" style="font-size: 11px; color: #d63031; margin-top: 5px;" class="hidden"></div>
                     </div>
 
-                    <div style="display: flex; gap: 10px; margin-top: 10px;">
-                        <div style="flex: 1;">
-                            <label style="font-size: 12px; color: #636e72;">Unidades:</label>
-                            <input type="text" id="inboundUnid" placeholder="0" required>
-                        </div>
-                        <div style="flex: 1;">
-                            <label style="font-size: 12px; color: #636e72;">Disponible:</label>
-                            <input type="text" id="inboundAvailable" readonly style="background: #f1f3f5;">
-                        </div>
-                        <div style="flex: 1;">
-                            <label style="font-size: 12px; color: #636e72;">Medida:</label>
-                            <input type="text" id="inboundUnit" readonly style="background: #f1f3f5;">
-                        </div>
-                    </div>
+                    <div id="inboundUnitsContainer" style="display: flex; gap: 10px; margin-top: 10px;"></div>
+
                     <label style="font-size: 12px; color: #636e72;">Fecha de Entrada:</label>
                     <input type="date" id="inboundDate" required>
                     <label style="font-size: 12px; color: #636e72;">Proveedor:</label>
@@ -347,23 +349,15 @@
                 
                 <div id="outboundExtraFields" class="hidden">
                     <label style="font-size: 12px; color: #636e72;">Granja de origen:</label>
-                    <select id="outboundFarm" required><option value="">Seleccione granja...</option></select>
+                    <input type="text" id="outboundFarm" readonly style="background: #f1f3f5;">
 
                     <div id="outboundShedContainer" class="hidden" style="margin-top: 10px;">
                         <label style="font-size: 12px; color: #636e72;">Galpón:</label>
                         <select id="outboundShed"><option value="">Seleccione galpón...</option></select>
                     </div>
 
-                    <div style="display: flex; gap: 10px; margin-top: 10px;">
-                        <div style="flex: 1;">
-                            <label style="font-size: 12px; color: #636e72;">Unidades:</label>
-                            <input type="text" id="outboundUnid" placeholder="0" required>
-                        </div>
-                        <div style="flex: 1;">
-                            <label style="font-size: 12px; color: #636e72;">Medida:</label>
-                            <input type="text" id="outboundUnit" readonly style="background: #f1f3f5;">
-                        </div>
-                    </div>
+                    <div id="outboundUnitsContainer" style="display: flex; gap: 10px; margin-top: 10px;"></div>
+
                     <label style="font-size: 12px; color: #636e72;">Fecha de Salida:</label>
                     <input type="date" id="outboundDate" required>
                     <label style="font-size: 12px; color: #636e72;">Descripción / Justificación:</label>
@@ -422,6 +416,7 @@
 
         <!-- Registrar Galpón (FASE 8.2) -->
         <div id="modalCreateShed" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4>Nuevo Galpón</h4>
             <form id="formCreateShed" autocomplete="off">
                 <label style="font-size: 12px; color: #636e72;">Granja:</label>
@@ -437,8 +432,27 @@
             </form>
         </div>
 
+        <!-- Editar Galpón (Nuevo Modal Independiente) -->
+        <div id="modalEditShed" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4>Editar Galpón</h4>
+            <form id="formEditShed" autocomplete="off">
+                <label style="font-size: 12px; color: #636e72;">Granja:</label>
+                <select id="editShedFarm" required><option value="">Seleccione granja...</option></select>
+                <input type="text" id="editShedNumber" placeholder="Número" readonly style="background: #f1f3f5;">
+                <label style="font-size: 12px; color: #636e72;">Animal:</label>
+                <select id="editShedAnimal" required><option value="">Seleccione animal...</option></select>
+                <input type="number" id="editShedAbility" placeholder="Capacidad de animales" required>
+                <div class="modal-btns">
+                    <button type="submit">Actualizar Galpón</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+
         <!-- Configuración Obligatoria de Franquicia (PROVINCE) -->
         <div id="modalCreateProvince" class="modal hidden">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4>Configuración Obligatoria: Datos de Franquicia</h4>
             <p style="font-size: 12px; color: #636e72; margin-bottom: 15px;">Antes de continuar, debe registrar los datos legales de la franquicia a cargo.</p>
             <form id="formCreateProvince" autocomplete="off">
@@ -455,11 +469,11 @@
             <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
             <h4 id="manageShedAnimalsTitle">Gestión de Animales</h4>
             <div class="action-bar" style="display: flex; gap: 10px; margin-bottom: 20px; align-items:center;">
+                <div id="shedAnimalLabel" style="font-size:13px; color:#2d3436; font-weight:700; padding:6px 10px; border: 1px solid #dfe6e9; border-radius: 5px; background: #f9f9f9;"></div>
                 <button class="action-btn" style="background: #00b894;" onclick="showModal('modalInboundAnimal')">Ingresar animales</button>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <button class="action-btn" style="background: #d63031;" onclick="showModal('modalOutboundAnimal')">Sacar animales</button>
-                    <div id="shedAnimalLabel" style="font-size:13px; color:#2d3436; font-weight:700; padding:6px 10px; background:transparent;"></div>
-                </div>
+                <button class="action-btn" style="background: #d63031;" onclick="showModal('modalOutboundAnimal')">Sacar animales</button>
+                <button class="action-btn" style="background: #0984e3;" onclick="showModal('modalViewPrices')">Ver Precios</button>
+                <button class="action-btn" style="background: #e67e22;" onclick="showModal('modalConfigStats')">Parámetros</button>
             </div>
 
             <div style="display: flex; gap: 20px;">
@@ -480,6 +494,22 @@
                             <div style="text-align:center; padding: 15px; color: #b2bec3;">No hay salidas registradas</div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <hr style="margin: 25px 0; border-color: #dfe6e9;">
+
+            <div>
+                <h5 style="margin-bottom: 10px; color: #2d3436;">Resultados de Parámetros</h5>
+                <div class="action-bar" style="margin-bottom: 15px; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dfe6e9; justify-content: flex-start;">
+                    <label style="font-size: 12px; color: #636e72; margin-right: 5px;">Desde:</label>
+                    <input type="date" id="statsDateStart" class="action-btn" style="background: white; color: #2d3436; border: 1px solid #dfe6e9; height: 38px; margin: 0;">
+                    <label style="font-size: 12px; color: #636e72; margin-left: 15px; margin-right: 5px;">Hasta:</label>
+                    <input type="date" id="statsDateEnd" class="action-btn" style="background: white; color: #2d3436; border: 1px solid #dfe6e9; height: 38px; margin: 0;">
+                    <button class="action-btn" style="background: #00b894; margin-left: 15px;" onclick="calculateAndRenderStatistics()">Calcular</button>
+                </div>
+                <div id="statsResultContainer" class="table-container" style="padding: 20px; background: #fdfdfd;">
+                    <p style="text-align:center; color: #b2bec3;">Seleccione un rango de fechas y presione "Calcular" para ver los resultados.</p>
                 </div>
             </div>
         </div>
@@ -515,9 +545,21 @@
 
                 <hr style="margin: 2px 0 8px 0; border: 0; border-top: 1px solid #eee;">
 
+                <!-- FASE 13: Checkbox para registrar precio por KG -->
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <input type="checkbox" id="inboundRegisterPriceKg" style="width: auto; margin: 0;">
+                    <label for="inboundRegisterPriceKg" style="margin: 0; font-size: 13px; font-weight: normal; color: #636e72;">¿Registrar precio de venta por KG?</label>
+                </div>
+
                 <div id="dynamicProductionFields" style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 0;">
                     <!-- Los campos configurados se cargarán aquí dinámicamente -->
                     <p style="font-size: 11px; color: #b2bec3; text-align: center;">Seleccione un animal para cargar sus campos de producción</p>
+                </div>
+
+                <!-- Campo de Descripción -->
+                <div class="input-group" style="margin-top: 15px;">
+                    <label for="inboundAnimalDescription" style="font-size: 12px; color: #636e72;">Descripción:</label>
+                    <input type="text" id="inboundAnimalDescription" placeholder="Descripción del ingreso..." style="margin-bottom: 0;">
                 </div>
 
                 <div class="modal-btns" style="margin-top: 20px;">
@@ -588,6 +630,10 @@
 
                         <label style="font-size: 11px; color: #636e72; font-weight: bold; display: block; margin-bottom: 5px;">Seleccione los campos para la operación:</label>
                         <div id="formulaFieldsChecklist" style="max-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;"></div>
+                        <!-- Nuevo contenedor para la selección de origen de datos -->
+                        <div id="formulaDataSourceContainer" class="hidden" style="margin-top: 15px; border-top: 1px dashed #dfe6e9; padding-top: 10px;">
+                            <label style="font-size: 11px; color: #636e72; font-weight: bold; display: block; margin-bottom: 5px;">Origen de los datos:</label>
+                        </div>
                     </div>
                     
                     <button type="submit" class="action-btn" style="width: 100%; height: 45px; margin-top: 15px;">Añadir campo</button>
@@ -628,12 +674,102 @@
 
                 <hr style="margin: 2px 0 8px 0; border: 0; border-top: 1px solid #eee;">
 
+                <!-- FASE 13: Checkbox para registrar precio por KG -->
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <input type="checkbox" id="outboundRegisterPriceKg" style="width: auto; margin: 0;">
+                    <label for="outboundRegisterPriceKg" style="margin: 0; font-size: 13px; font-weight: normal; color: #636e72;">¿Registrar precio de venta por KG?</label>
+                </div>
+
                 <div id="dynamicProductionFieldsOut" style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 0;">
                     <!-- Campos dinámicos de salida -->
                 </div>
 
+                <!-- Checkbox Marinado y Descripción -->
+                <div style="margin-top: 15px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                        <input type="checkbox" id="outboundAnimalMarinated" style="width: auto; margin: 0;">
+                        <label for="outboundAnimalMarinated" style="margin: 0; font-size: 14px; font-weight: normal; color: #636e72;">¿Animal marinado?</label>
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <label for="outboundAnimalDescription" style="font-size: 12px; color: #636e72;">Descripción:</label>
+                        <input type="text" id="outboundAnimalDescription" placeholder="Descripción de la salida..." style="margin-bottom: 0;">
+                    </div>
+                </div>
+
+
                 <div class="modal-btns" style="margin-top: 20px;">
                     <button type="submit" class="action-btn" style="width: 100%;">Registrar Salida</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Modal para Ver Precios de Producción -->
+        <div id="modalViewPrices" class="modal hidden" style="max-width: 800px; width: auto;">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4>Precios de Venta por Lote</h4>
+            <div style="display: flex; gap: 20px;">
+                <div style="flex: 1;">
+                    <h5 style="margin-bottom: 10px; color: #2d3436;">Precios de Ingreso</h5>
+                    <div class="table-container" style="max-height: 60vh; overflow-y: auto;">
+                        <div id="inboundPricesTableBody">
+                            <p style="text-align:center; padding: 15px; color: #b2bec3;">No hay datos de precios.</p>
+                        </div>
+                    </div>
+                </div>
+                <div style="flex: 1;">
+                    <h5 style="margin-bottom: 10px; color: #2d3436;">Precios de Salida</h5>
+                    <div class="table-container" style="max-height: 60vh; overflow-y: auto;">
+                        <div id="outboundPricesTableBody">
+                            <p style="text-align:center; padding: 15px; color: #b2bec3;">No hay datos de precios.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Configurar y Ver Estadísticas de Producción -->
+        <div id="modalConfigStats" class="modal hidden" style="width: 600px;">
+            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <h4 id="statsTitle">Parámetros de Producción</h4>
+            <p style="font-size: 12px; color: #636e72; margin-bottom: 15px;">Configure estadísticas cruzando datos de entradas y salidas.</p>
+
+            <div id="statsListContainer" style="margin-bottom: 20px; max-height: 200px; overflow-y: auto; padding-right: 5px;">
+                <!-- Lista de estadísticas guardadas -->
+            </div>
+
+            <form id="formConfigStat" onsubmit="event.preventDefault(); saveStatisticConfig();">
+                <div style="background: #f1f3f5; padding: 20px; border-radius: 8px; border: 1px solid #dfe6e9;">
+                    <label style="font-size: 13px; font-weight: bold; color: #2d3436; margin-bottom: 15px; display: block;">Nueva Estadística:</label>
+                    
+                    <div class="input-group" style="margin-bottom: 10px;">
+                        <label style="font-size: 11px; color: #636e72;">Nombre de la Estadística:</label>
+                        <input type="text" id="statName" placeholder="Ej: Rendimiento Canal" required style="margin-bottom: 0;">
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: flex-end; margin-bottom: 10px;">
+                        <!-- Operando 1 -->
+                        <div class="input-group" style="flex: 1; margin-bottom: 0;">
+                            <label style="font-size: 11px; color: #636e72;">Dato 1 (Campo):</label>
+                            <select id="statOperand1Field" required style="margin-bottom: 0;"></select>
+                        </div>
+                        <!-- Operación -->
+                        <div class="input-group" style="flex: 1; margin-bottom: 0;">
+                            <label style="font-size: 11px; color: #636e72;">Operación:</label>
+                            <select id="statOperation" required style="margin-bottom: 0;">
+                                <option value="div">División ( / )</option>
+                                <option value="sub">Resta ( - )</option>
+                                <option value="sum">Suma ( + )</option>
+                            </select>
+                        </div>
+                        <!-- Operando 2 -->
+                        <div class="input-group" style="flex: 1; margin-bottom: 0;">
+                            <label style="font-size: 11px; color: #636e72;">Dato 2 (Campo):</label>
+                            <select id="statOperand2Field" required style="margin-bottom: 0;"></select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="action-btn" style="width: 100%; height: 45px; margin-top: 15px;">Guardar Parámetro</button>
                 </div>
             </form>
         </div>
@@ -645,4 +781,4 @@
 
     <script src="funciones.js"></script>
 </body>
-</html>
+</html

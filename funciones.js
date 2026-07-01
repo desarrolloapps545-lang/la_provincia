@@ -8,7 +8,7 @@ const SUPABASE_ANON_PUBLIC_KEY = "TU_SUPABASE_ANON_PUBLIC_KEY_AQUI"; // <--- DEB
 // Inicialización del cliente de Supabase (Ingeniería de Backend en el Cliente)
 const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let CURRENT_USER_ROLE = "";
-window.CURRENT_INVENTORY_MODE = "products";
+window.CURRENT_VIEW_MODE = "products"; // 'products' o 'sheds'
 
 // Variable global para trackear el orden de selección en fórmulas
 let selectedFormulaFields = [];
@@ -88,31 +88,38 @@ const getNumericFieldValue = (input) => {
 };
 
 const computeFormulaResult = (op, targets, fieldValues) => {
-    const val1 = fieldValues[targets[0]] || 0;
-    const val2 = targets.length === 2 ? (fieldValues[targets[1]] || 0) : 0;
-    const baseValue = fieldValues['Peso Inicial'] || 0;
-
     if (op === 'formula_sum') {
         return targets.reduce((sum, label) => sum + (fieldValues[label] || 0), 0);
     }
 
+    // Si no hay campos seleccionados para las siguientes operaciones, no hay nada que calcular.
+    if (targets.length === 0) return 0;
+
+    const val1 = fieldValues[targets[0]] || 0;
+    const val2 = targets.length > 1 ? (fieldValues[targets[1]] || 0) : 0;
+
     if (op === 'formula_diff') {
-        if (targets.length === 1) {
-            return baseValue - val1;
-        }
+        // Si solo se selecciona un campo, se asume que es el sustraendo de un minuendo no especificado (o 0).
+        // La lógica correcta es que si se seleccionan 2, es val1 - val2.
+        // Si se selecciona 1, podría ser 0 - val1, o val1 - 0. Asumimos que es una resta entre los seleccionados.
         return val1 - val2;
     }
 
     if (op === 'formula_add') {
-        if (targets.length === 1) {
-            return baseValue + val1;
-        }
+        // Si solo se selecciona un campo, se suma a 0.
+        // Si se seleccionan dos, se suman entre ellos.
         return val1 + val2;
     }
 
     if (op === 'formula_div') {
-        if (targets.length === 1) {
-            return baseValue !== 0 ? val1 / baseValue : 0;
+        // Si solo se selecciona un campo, no se puede dividir. Se necesitan dividendo y divisor.
+        if (targets.length < 2) {
+            // Podríamos interpretar que es val1 / [algo], pero es ambiguo.
+            // La lógica correcta es que el primer campo seleccionado es el dividendo y el segundo el divisor.
+            // Si solo hay uno, la operación es incompleta.
+            const divisor = fieldValues['Peso Inicial (Ingreso)'] || 0; // Fallback por si la intención era dividir por el peso de ingreso
+            if (divisor !== 0) return val1 / divisor;
+            return 0;
         }
         return val2 !== 0 ? val1 / val2 : 0;
     }
@@ -120,37 +127,38 @@ const computeFormulaResult = (op, targets, fieldValues) => {
     return 0;
 };
 
+// Ingeniería de Sistemas: Generador de código correlativo automático para inventario
+const generateNextInventoryCode = async (count = 1) => {
+    const { data, error } = await _supabase
+        .from('products')
+        .select('inventory_code') // Seleccionar la columna correcta
+        .not('inventory_code', 'is', null)
+        .order('inventory_code', { ascending: false }) // Ordenar por la columna correcta
+        .limit(1);
+
+    if (error || !data || data.length === 0) {
+        return Array.from({ length: count }, (_, i) => String(100001 + i));
+    }
+
+    let startCode = parseInt(data[0].inventory_code || '100000') + 1;
+    
+    return Array.from({ length: count }, (_, i) => String(startCode + i));
+};
+
 // Ingeniería de Sistemas: Generador de código correlativo automático para productos
 const generateNextProductCode = async () => {
     const { data, error } = await _supabase
         .from('products')
-        .select('code')
-        .order('code', { ascending: false })
+        .select('base_code')
+        .order('base_code', { ascending: false })
         .limit(1);
 
     if (error || !data || data.length === 0) {
         return "100001";
     }
 
-    let nextCode = parseInt(data[0].code) + 1;
+    let nextCode = parseInt(data[0].base_code) + 1;
     // Regla: si llega a X00000, pasa a X00001 (ej: 199999 -> 200001)
-    if (nextCode % 100000 === 0) nextCode++;
-    return String(nextCode);
-};
-
-// Ingeniería de Sistemas: Generador de código correlativo automático para inventario
-const generateNextInventoryCode = async () => {
-    const { data, error } = await _supabase
-        .from('inventory')
-        .select('code')
-        .order('code', { ascending: false })
-        .limit(1);
-
-    if (error || !data || data.length === 0) {
-        return "100001";
-    }
-
-    let nextCode = parseInt(data[0].code) + 1;
     if (nextCode % 100000 === 0) nextCode++;
     return String(nextCode);
 };
@@ -371,7 +379,7 @@ async function initWorkspace(role) {
         if (invActions[6]) invActions[6].classList.add('hidden'); // Kardex
 
         // Activación automática de la vista de inventario
-        renderInventoryView('products');
+        renderProductsView();
     } else {
         await checkProvinceData();
         document.getElementById('welcomeMessage')?.classList.remove('hidden');
@@ -414,14 +422,13 @@ function showModal(id) {
     overlay.classList.remove('hidden');
     document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
     const modal = document.getElementById(id);
-    modal.classList.remove('hidden');
-    const isEdit = modal.querySelector('form')?.dataset.mode === 'edit';
 
     // Ingeniería de Sistemas: Resetear estado de edición al abrir como "Nuevo"
     const form = modal.querySelector('form');
     if (form) {
+        // La comprobación de 'isEdit' se hace aquí para decidir si se resetea o no.
         const isEdit = form.dataset.mode === 'edit';
-        if (!isEdit) {
+        if (!isEdit && id !== 'modalEditShed') { // <-- AÑADIDO: No resetear el form de edición de galpón
             form.reset();
             delete form.dataset.mode;
             delete form.dataset.originalId;
@@ -434,24 +441,36 @@ function showModal(id) {
             if (id === 'modalCreateProduct') { 
                 title.textContent = "Nuevo Producto"; 
                 submitBtn.textContent = "Guardar"; 
-                // Generar código automáticamente al abrir para nuevo producto
+                // Generar código automáticamente al abrir para nuevo producto (definición)
                 generateNextProductCode().then(code => {
                     document.getElementById('prodCode').value = code;
                 });
                 document.getElementById('prodTotalProjection').textContent = "$ 0";
                 
-                // Resetear campos de peso
+                // Resetear campos de peso y animales
                 const checkWeight = document.getElementById('prodHasWeight');
                 if (checkWeight) {
                     checkWeight.checked = false;
                     document.getElementById('prodWeightContainer').classList.add('hidden');
                 }
                 const isAnimalCheck = document.getElementById('prodIsAnimal');
-                if (isAnimalCheck) isAnimalCheck.checked = false;
+                if (isAnimalCheck) {
+                    isAnimalCheck.checked = false;
+                    // Ingeniería de Sistemas: Verificación de existencia de elementos para evitar errores de null.
+                    const priceContainer = document.getElementById('prodPriceContainer');
+                    if (priceContainer) priceContainer.classList.remove('hidden');
+                    if (document.getElementById('prodForSaleContainer')) document.getElementById('prodForSaleContainer').classList.remove('hidden');
+                }
+                const forSaleCheck = document.getElementById('prodForSale');
+                if (forSaleCheck) {
+                    forSaleCheck.checked = true;
+                    updateSalePriceVisibility();
+                }
             }
-            if (id === 'modalCreateShed') { title.textContent = "Nuevo Galpón"; submitBtn.textContent = "Guardar Galpón"; }
         }
     }
+
+    modal.classList.remove('hidden');
 
     if(id === 'modalOutboundAnimal') prepareOutboundAnimalModal();
     if(id === 'modalCreateUser') prepareRoleDropdown();
@@ -459,9 +478,12 @@ function showModal(id) {
     if(id === 'modalCreateSupplier') loadProductsForSelect(); // Esta línea es correcta, carga productos para proveedores.
     if(id === 'modalInboundInventory') prepareInboundModal();
     if(id === 'modalOutboundInventory') prepareOutboundModal();
-    if(id === 'modalCreateShed') prepareShedModal();
+    if(id === 'modalCreateShed') prepareShedModal(); // Para la vista de Galpones
     if(id === 'modalListCategories') renderCategoriesList();
     if(id === 'modalInboundAnimal') prepareInboundAnimalModal();
+    if(id === 'modalBaseProducts') renderBaseProducts();
+    if(id === 'modalConfigStats') prepareStatsModal();
+    if(id === 'modalOutboundInventory') prepareOutboundModal();
 }
 
 function closeModals() {
@@ -610,7 +632,7 @@ document.getElementById('btnGestionUsuarios').addEventListener('click', async ()
     document.getElementById('farmsView')?.classList.add('hidden');
     document.getElementById('suppliersView')?.classList.add('hidden');
     document.getElementById('productsView')?.classList.add('hidden');
-    document.getElementById('inventoryView')?.classList.add('hidden');
+    document.getElementById('inventoryView')?.classList.add('hidden'); // Vista de Galpones
     usersView.classList.remove('hidden');
     
     const tableContainer = document.getElementById('tableContainer');
@@ -658,60 +680,28 @@ function renderUsersTable(users) {
     tableContainer.innerHTML = html;
 }
 
-async function loadFilteredProducts() {
-    const search = normalizeText(document.getElementById('searchProductInput')?.value);
-    const tableContainer = document.getElementById('productsTableContainer');
-
-    if (!search) {
-        tableContainer.innerHTML = "<p style='padding:40px; text-align:center; color:#636e72;'>Realice una búsqueda o seleccione una categoría para ver los productos</p>";
-        return;
-    }
-
-    tableContainer.innerHTML = "<p style='padding:20px;'>Cargando productos...</p>";
-
-    let query = _supabase.from('products').select('*');
-
-    const { data, error } = await query;
-    if (error) {
-        tableContainer.innerHTML = `<p class="error-msg">Error: ${error.message}</p>`;
-        return;
-    }
-
-    let filtered = data || [];
-    if (search) {
-        filtered = filtered.filter(p => 
-            normalizeText(p.name).includes(search) || 
-            normalizeText(p.code).includes(search)
-        );
-    }
-    renderProductsTable(filtered);
-}
-
 // FASE 8.2: Gestión de Galpones (Creación y Autonumeración)
-async function loadAnimalsForShed(farmName) {
-    const animalSelect = document.getElementById('shedAnimal');
-    if (!farmName) {
-        animalSelect.innerHTML = '<option value="">Seleccione primero una granja...</option>';
-        return;
-    }
+async function loadAnimalsForShed(targetSelect) {
+    const animalSelect = targetSelect || document.getElementById('shedAnimal');
 
-    const { data: farmData, error } = await _supabase
-        .from('farms')
-        .select('animals')
-        .eq('name', farmName)
-        .single();
+    // Ingeniería de Datos: Cargar animales desde la tabla 'products' donde animal=true
+    const { data: animals, error } = await _supabase
+        .from('products')
+        .select('name')
+        .eq('animal', true)
+        .eq('inventory', false) // Solo definiciones de producto
+        .order('name');
 
     if (error) {
-        console.error("Error al cargar animales de la granja:", error);
+        console.error("Error al cargar tipos de animales:", error);
         animalSelect.innerHTML = '<option value="">Error al cargar animales</option>';
         return;
     }
 
-    if (farmData && Array.isArray(farmData.animals) && farmData.animals.length > 0) {
-        animalSelect.innerHTML = '<option value="">Seleccione animal...</option>' + 
-            farmData.animals.map(a => `<option value="${a}">${a}</option>`).join('');
-    } else {
-        animalSelect.innerHTML = '<option value="">No hay animales configurados para esta granja</option>';
+    animalSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione animal...</option>' + 
+        (animals?.map(a => `<option value="${a.name}">${a.name}</option>`).join('') || '');
+    if (!animals || animals.length === 0) {
+        animalSelect.innerHTML = '<option value="">No hay productos marcados como animales</option>';
     }
 }
 
@@ -723,8 +713,7 @@ async function prepareShedModal() {
     const { data: farms } = await _supabase.from('farms').select('name').order('name');
     farmSelect.innerHTML = '<option value="">Seleccione granja...</option>' + 
         (farms?.map(f => `<option value="${f.name}">${f.name}</option>`).join('') || '');
-
-    animalSelect.innerHTML = '<option value="">Seleccione primero una granja...</option>';
+    await loadAnimalsForShed(animalSelect); // Cargar los animales desde la tabla products
     
     if (!isEdit) document.getElementById('shedNumber').value = "";
 }
@@ -737,46 +726,65 @@ document.getElementById('shedFarm')?.addEventListener('change', async function()
         const { data } = await _supabase.from('sheds').select('id').eq('farm', farmName);
         const nextNumber = (data?.length || 0) + 1;
         document.getElementById('shedNumber').value = nextNumber;
-    }
-
-    await loadAnimalsForShed(farmName);
+    } // No es necesario recargar animales aquí, ya se cargaron al abrir el modal
 });
 
 document.getElementById('formCreateShed')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
-    const form = e.target;
-    const isEdit = form.dataset.mode === 'edit';
     
     const shedData = {
         number: parseInt(document.getElementById('shedNumber').value),
         farm: document.getElementById('shedFarm').value,
         ability: parseInt(document.getElementById('shedAbility').value),
         animal: document.getElementById('shedAnimal').value,
+        used: 0, // Valor inicial para un nuevo galpón
+        created_at: getColombiaTimestamp()
     };
 
-    let result;
-    if (isEdit) {
-        const [origFarm, origNum] = form.dataset.originalId.split('-');
-        result = await _supabase.from('sheds').update(shedData).eq('farm', origFarm).eq('number', parseInt(origNum));
-    } else {
-        shedData.used = 0;
-        shedData.created_at = getColombiaTimestamp();
-        result = await _supabase.from('sheds').insert([shedData]);
-    }
-
-    const { error } = result;
+    // Lógica simplificada solo para inserción
+    const { error } = await _supabase.from('sheds').insert([shedData]);
 
     if (error) {
         showToast("Error al registrar galpón: " + error.message, "error");
     } else {
-        showToast(isEdit ? "Galpón actualizado exitosamente" : "Galpón registrado exitosamente");
+        showToast("Galpón registrado exitosamente");
         closeModals();
-        if (!document.getElementById('inventoryView').classList.contains('hidden')) {
+        if (window.CURRENT_VIEW_MODE === 'sheds') {
             renderInventoryView('sheds');
         }
     }
 });
+
+document.getElementById('formEditShed')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const form = e.target;
+    const [origFarm, origNum] = form.dataset.originalId.split('-');
+
+    const shedData = {
+        number: parseInt(document.getElementById('editShedNumber').value),
+        farm: document.getElementById('editShedFarm').value,
+        ability: parseInt(document.getElementById('editShedAbility').value),
+        animal: document.getElementById('editShedAnimal').value,
+    };
+
+    const { error } = await _supabase
+        .from('sheds')
+        .update(shedData)
+        .eq('farm', origFarm)
+        .eq('number', parseInt(origNum));
+
+    if (error) {
+        showToast("Error al actualizar galpón: " + error.message, "error");
+    } else {
+        showToast("Galpón actualizado exitosamente");
+        closeModals();
+        if (window.CURRENT_VIEW_MODE === 'sheds') {
+            renderInventoryView('sheds');
+        }
+    }
+});
+
 
 // Ingeniería de Sistemas: Lógica de Cierre de Sesión
 document.getElementById('btnLogout')?.addEventListener('click', async () => {
@@ -790,12 +798,24 @@ async function prepareInboundModal() {
     const prodSelect = document.getElementById('inboundProduct');
     const extraFields = document.getElementById('inboundExtraFields');
     extraFields.classList.add('hidden');
+    
+    // Cargar tanto definiciones (inventory=false) como productos existentes en inventario (inventory=true)
+    const { data: baseProds } = await _supabase.from('products').select('name, unit, medit, base_code, animal, weigth').eq('inventory', false).order('name');
+    const { data: invProds } = await _supabase.from('products').select('name, unit, medit, base_code, animal, weigth').eq('inventory', true).order('name');
 
-    // Carga inicial de productos excluyendo aquellos marcados como animales
-    let { data: prods } = await _supabase.from('products').select('name, unit, medit, code, animal').eq('animal', false).order('name');
+    const allProds = [
+        ...(baseProds || []).map(p => ({ ...p, type: 'base' })),
+        ...(invProds || []).map(p => ({ ...p, type: 'inventory' }))
+    ];
 
+    // Eliminar duplicados por nombre, dando prioridad a los de inventario
+    const uniqueProds = Array.from(new Map(allProds.map(p => [p.name, p])).values());
+    
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>' + 
-        prods.map(p => `<option value="${p.name}" data-unit="${p.unit}" data-medit="${p.medit}" data-code="${p.code}">${p.name}</option>`).join('');
+        uniqueProds.map(p => `
+            <option value="${p.name}" data-unit='${JSON.stringify(p.unit)}' data-medit='${JSON.stringify(p.medit)}' data-code="${p.base_code}" data-animal="${p.animal}" data-weigth='${JSON.stringify(p.weigth || null)}'>
+                ${p.name} ${p.type === 'inventory' ? '(Existente)' : ''}
+            </option>`).join('');
 
     const { data: farms } = await _supabase.from('farms').select('name').order('name');
     const farmSelect = document.getElementById('inboundFarm');
@@ -824,17 +844,33 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
     const selected = this.options[this.selectedIndex];
     if (!selected.value) return;
 
-    const productName = selected.value;
-    const unitValue = selected.getAttribute('data-unit'); // Valor por unidad (ej: 50)
-    const medit = selected.getAttribute('data-medit'); // Medida (ej: Kg)
+    const inboundUnitsContainer = document.getElementById('inboundUnitsContainer');
+    inboundUnitsContainer.innerHTML = ''; // Limpiar campos anteriores
 
-    document.getElementById('inboundUnit').value = medit; // El campo inboundUnit ahora muestra la medida
-    document.getElementById('inboundAvailable').value = formatNumber(unitValue);
-    document.getElementById('inboundAvailable').dataset.initial = unitValue;
+    const productName = selected.value;
+    const weigthData = JSON.parse(selected.getAttribute('data-weigth') || 'null');
+    const meditData = JSON.parse(selected.getAttribute('data-medit') || '[]');
+    const isAnimal = selected.getAttribute('data-animal') === 'true';
+
+    if (weigthData && typeof weigthData === 'object' && Object.keys(weigthData).length > 0) {
+        // Generar campos dinámicos desde el objeto weigth
+        inboundUnitsContainer.innerHTML = Object.entries(weigthData).map(([medit, unit]) => `
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label>
+                <input type="text" class="inbound-unid-input" data-medit="${medit}" placeholder="0">
+            </div>
+        `).join('');
+    } else {
+        // Fallback a un solo campo si no hay weigth
+        inboundUnitsContainer.innerHTML = `
+            <div style="flex: 1;"><label style="font-size: 12px; color: #636e72;">Unidades (${meditData[0] || 'N/A'}):</label><input type="text" class="inbound-unid-input" data-medit="${meditData[0] || ''}" placeholder="0"></div>
+        `;
+    }
+
     document.getElementById('inboundExtraFields').classList.remove('hidden');
-    document.getElementById('inboundUnid').value = "";
-    document.getElementById('inboundShedContainer').classList.add('hidden'); // Ocultar galpón para ingreso de productos
-    
+    // Mostrar/ocultar galpón si es animal
+    document.getElementById('inboundShedContainer').classList.toggle('hidden', !isAnimal);
+
     // Resetear selección de granja al cambiar producto
     const farmSelect = document.getElementById('inboundFarm');
     if (farmSelect) farmSelect.value = "";
@@ -850,80 +886,48 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
         availableProvs.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
 });
 
-// Ingeniería de Backend: Inicialización de registro por Granja al seleccionarla
 document.getElementById('inboundFarm')?.addEventListener('change', async function() {
     const farmName = this.value;
     const prodSelect = document.getElementById('inboundProduct');
-    const selected = prodSelect.options[prodSelect.selectedIndex];
-    
-    if (!farmName || !selected.value) return;
+    const isAnimal = prodSelect.options[prodSelect.selectedIndex]?.dataset.animal === 'true';
 
-    const productName = selected.value;
-    const unit = selected.getAttribute('data-unit');
-    const code = selected.getAttribute('data-code');
-    const medit = selected.getAttribute('data-medit');
-    const fNameInit = document.getElementById('inboundFarm').value;
-
-    // Carga de galpones dinámicos basados en la granja seleccionada
-    const shedSelect = document.getElementById('inboundShed');
-    const shed = shedSelect ? shedSelect.value : "";
-    let query = _supabase
-        .from('inventory')
-        .select('product')
-        .eq('product', productName)
-        .eq('farm', fNameInit);
-    
-    if (shed) query = query.eq('shed', shed);
-    const { data: existing } = await query.maybeSingle(); // This query is now only for non-animal products
-
-    if (!existing) {
-        const { error: invError } = await _supabase.from('inventory').insert([{
-            code: code,
-            product: productName,
-            // categorie: category, // La categoría ya no se guarda en el inventario
-            shed: shed || null,
-            amount: 0,
-            farm: farmName,
-            provider: [],
-            created_at: getColombiaTimestamp()
-        }]);
-        if (invError) console.error("Error al inicializar inventario en granja:", invError);
+    if (isAnimal && farmName) {
+        const shedSelect = document.getElementById('inboundShed');
+        const { data, error } = await _supabase.from('sheds').select('number').eq('farm', farmName).order('number');
+        if (error) return;
+        shedSelect.innerHTML = '<option value="">Seleccione galpón...</option>' + 
+            (data?.map(s => `<option value="${s.number}">${s.number}</option>`).join('') || '');
     }
-});
-
-// Ingeniería de Sistemas: Lógica de resta en tiempo real del stock disponible (comprado)
-document.getElementById('inboundUnid')?.addEventListener('input', function() {
-    const inputVal = parseInt(this.value.replace(/\./g, '')) || 0;
-    const initial = parseFloat(document.getElementById('inboundAvailable').dataset.initial) || 0;
-    const remaining = initial - inputVal;
-    
-    this.value = formatNumber(inputVal);
-    document.getElementById('inboundAvailable').value = formatNumber(remaining);
 });
 
 document.getElementById('formInboundInventory')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    const productName = document.getElementById('inboundProduct').value;
+    const selectedOption = document.getElementById('inboundProduct').options[document.getElementById('inboundProduct').selectedIndex];
+    const productName = selectedOption.value;
+    const baseCode = selectedOption.dataset.code;
     const inboundUnid = parseInt(document.getElementById('inboundUnid').value.replace(/\./g, '')) || 0;
-    const rawAmount = inboundUnid; // La cantidad total se iguala a las unidades ingresadas
+    const weigthData = {};
+    document.querySelectorAll('.inbound-unid-input').forEach(input => {
+        const medit = input.dataset.medit;
+        const value = parseFloat(input.value.replace(/\./g, '')) || 0;
+        if (medit && value > 0) weigthData[medit] = value;
+    });
+
     const farmName = document.getElementById('inboundFarm').value;
-    const moveDate = document.getElementById('inboundDate').value;
+    const entranceDate = document.getElementById('inboundDate').value;
     const providerName = document.getElementById('inboundProvider').value;
-    const inboundMedit = document.getElementById('inboundUnit').value; // Medida
     const description = document.getElementById('inboundDescription').value;
     const shedValue = document.getElementById('inboundShed').value;
 
-    // 1. Registro en tabla movements
+    // 1. Registrar movimiento en Kardex
     const { error: moveError } = await _supabase.from('movements').insert([{
         name: productName,
         type: "ingreso",
-        amount: rawAmount,
-        farm: farmName,
-        medit: inboundMedit, // Guardar medida
-        shed: shedValue || null, // Mantener shed si aplica
-        // categorie: categoryName, // La categoría ya no se guarda en movimientos
-        date_movement: moveDate,
+        amount: inboundUnid,
+        farm: farmName, // La medida se infiere del producto
+        shed: shedValue || null,
+        date_movement: entranceDate,
         provider: providerName || "",
         description: description,
         created_at: getColombiaTimestamp()
@@ -934,68 +938,73 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
         return;
     }
 
-    // 2. Actualización de tabla inventory (Suma técnica de saldos)
-    let invQuery = _supabase
-        .from('inventory')
-        .select('amount, provider')
-        .eq('product', productName)
-        .eq('medit', inboundMedit) // Filtrar por medida
-        .eq('farm', farmName);
-    
-    // No longer filtering by shed for product inventory
-    const { data: currentInv } = await invQuery.maybeSingle();
-
-    const newTotal = (currentInv?.amount || 0) + rawAmount;
-    
-    // Gestión de Array de Proveedores en Inventario
-    let providersArray = Array.isArray(currentInv?.provider) ? currentInv.provider : [];
-    if (providerName && !providersArray.includes(providerName)) {
-        providersArray.push(providerName);
-    }
+    // 2. Buscar si ya existe un item de inventario para este producto en esta granja
+    let { data: currentProd, error: currentProdError } = await _supabase
+        .from('products')
+        .select('id, unit, provider')
+        .eq('base_code', baseCode)
+        .eq('farm', farmName)
+        .eq('inventory', true)
+        .maybeSingle();
 
     let updateError;
-    if (!currentInv) {
-        // Ingeniería de Datos: Fallback de creación si el registro específico (Galpón) no se inicializó previamente
-        const { data: pData } = await _supabase.from('products').select('code, unit').eq('name', productName).maybeSingle();
-        const { error: insErr } = await _supabase.from('inventory').insert([{
-            code: pData?.code || '',
-            product: productName,
-            // categorie: categoryName, // La categoría ya no se guarda en el inventario
-            shed: shedValue || null,
-            medit: inboundMedit,
-            amount: newTotal,
+    if (!currentProd) {
+        // NO EXISTE: Se crea un nuevo registro de producto para esa granja
+        const { data: pData } = await _supabase.from('products').select('*').eq('base_code', baseCode).eq('inventory', false).limit(1).single();
+        if (!pData) return showToast("Error: No se encontró la definición del producto base.", "error");
+
+        const { error: insErr } = await _supabase.from('products').insert([{
+            base_code: pData.base_code,
+            inventory_code: await generateNextInventoryCode(),
+            name: pData.name,
+            medit: pData.medit,
+            buy_price: pData.buy_price,
+            sale_price: pData.sale_price,
+            animal: pData.animal,
+            to_sale: pData.to_sale,
+            inventory: true,
             farm: farmName,
-            provider: providersArray,
-            created_at: getColombiaTimestamp()
+            unit: Object.values(weigthData)[0] || 0, // Tomar el primer valor como principal
+            weigth: weigthData,
+            provider: providerName ? [providerName] : [],
+            entrance_date: entranceDate,
+            created_at: getColombiaTimestamp() // Añadir la fecha de creación
         }]);
         updateError = insErr;
     } else {
-        let updateQuery = _supabase
-            .from('inventory')
-            .update({ 
-                amount: newTotal,
-                medit: inboundMedit, // Actualizar medida
-                provider: providersArray
-            })
-            .eq('product', productName)
-            .eq('farm', farmName);
+        // SÍ EXISTE: Se actualiza el stock (unit) y la fecha de entrada
+        const newWeigth = { ...(currentProd.weigth || {}) };
+        Object.entries(weigthData).forEach(([medit, value]) => {
+            newWeigth[medit] = (newWeigth[medit] || 0) + value;
+        });
 
-        if (shedValue) updateQuery = updateQuery.eq('shed', shedValue);
-        const { error: updErr } = await updateQuery;
+        let providersArray = Array.isArray(currentProd.provider) ? currentProd.provider : [];
+        if (providerName && !providersArray.includes(providerName)) {
+            providersArray.push(providerName);
+        }
+
+        const { error: updErr } = await _supabase
+            .from('products')
+            .update({ 
+                unit: Object.values(newWeigth)[0] || 0, // Actualizar unit principal
+                weigth: newWeigth, 
+                provider: providersArray, entrance_date: entranceDate })
+            .eq('id', currentProd.id);
         updateError = updErr;
     }
 
     if (updateError) {
         showToast("Error al actualizar existencias: " + updateError.message, "error");
     } else {
-        // Ingeniería de Backend: Actualización del stock global en la tabla 'products'
-        const remainingStock = parseFloat(document.getElementById('inboundAvailable').value.replace(/\./g, ''));
-        const { error: prodUpdateError } = await _supabase
-            .from('products')
-            .update({ unit: remainingStock })
-            .eq('name', productName);
+        // 3. Actualizar (restar) el stock del producto base
+        const { data: baseProd, error: baseErr } = await _supabase.from('products').select('unit').eq('base_code', baseCode).eq('inventory', false).single();
+        if (baseErr) {
+            showToast("Advertencia: Ingreso guardado, pero no se pudo actualizar el stock base.", "error");
+        } else {
+            const newBaseStock = (baseProd.unit || 0) - inboundUnid;
+            await _supabase.from('products').update({ unit: newBaseStock }).eq('base_code', baseCode).eq('inventory', false);
+        }
 
-        if (prodUpdateError) console.error("Error al actualizar stock global:", prodUpdateError);
 
         showToast("Ingreso de inventario procesado correctamente");
         
@@ -1005,9 +1014,20 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
         document.getElementById('inboundShedInfo').classList.add('hidden');
         
         closeModals();
-        document.getElementById('btnGestionInventario').click();
+        renderProductsView();
     }
 });
+
+window.deleteProduct = async (base_code) => {
+    if (!confirm(`¿Está seguro de eliminar la definición del producto con código ${base_code}?`)) return;
+    const { error } = await _supabase.from('products').delete().eq('base_code', base_code);
+    if (error) {
+        showToast("Error al eliminar producto: " + error.message, "error");
+    } else {
+        showToast("Definición de producto eliminada.");
+        renderBaseProducts(); // Refrescar la lista de productos base
+    }
+};
 
 // FASE 6.4: Ingeniería de Salidas de Inventario
 async function prepareOutboundModal() {
@@ -1015,46 +1035,56 @@ async function prepareOutboundModal() {
     const extraFields = document.getElementById('outboundExtraFields');
     extraFields.classList.add('hidden');
     
-    // Carga de productos desde inventario (excluyendo categorías de animales)
-    let { data: invItems } = await _supabase.from('inventory').select('product, medit').order('product'); // Items currently in inventory
-    // Ya no se filtra por categorías de animales aquí, ya que los productos no tienen categoría
+    // Resetear y habilitar campos por defecto
+    prodSelect.disabled = false; // Habilitar por defecto
+    // El input de granja ya es readonly, no necesita deshabilitarse.
+    document.getElementById('outboundShed').disabled = true; // El galpón no se usa para productos
+    document.getElementById('formOutboundInventory').reset();
 
-    const { data: productsInfo } = await _supabase.from('products').select('name, medit, unit, animal').order('name'); // All product info
+    // Poner fecha actual por defecto
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('outboundDate').value = today;
 
-    const meditMap = Object.fromEntries((productsInfo || []).map(p => [p.name, p.medit]));
-    const unitMap = Object.fromEntries((productsInfo || []).map(p => [p.name, p.unit])); // Factor de conversión
-    const animalSet = new Set((productsInfo || []).filter(p => p.animal).map(p => p.name));
-    const uniqueInvNames = [...new Set((invItems || []).map(i => i.product))].filter(name => !animalSet.has(name));
-
+    // Carga de productos desde la tabla products (que ahora es el inventario)
+    const { data: productsInfo } = await _supabase
+        .from('products')
+        .select('id, name, unit, medit, farm, weigth')
+        .eq('inventory', true) // Mostrar todos los productos que son parte del inventario físico
+        .order('name');
+    
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>' + 
-        uniqueInvNames.map(name => {
-            return `<option value="${name}" data-unit="${unitMap[name] || ''}" data-medit="${meditMap[name] || ''}">${name}</option>`;
-        }).join('');
-
-    const { data: farms } = await _supabase.from('farms').select('name').order('name');
-    const farmSelect = document.getElementById('outboundFarm');
-    if (farmSelect) {
-        farmSelect.innerHTML = '<option value="" disabled selected hidden>Seleccionar granja...</option>' + 
-            farms.map(f => `<option value="${f.name}">${f.name}</option>`).join('');
-
-        // Lógica de Bloqueo por Granja Asignada
-        if (window.CURRENT_USER_FARM && window.CURRENT_USER_FARM !== 'Todas las granjas') {
-            farmSelect.value = window.CURRENT_USER_FARM;
-            farmSelect.disabled = true;
-        } else {
-            farmSelect.disabled = false;
-        }
-    }
+        (productsInfo || []).map(p => `<option value="${p.id}" data-unit='${JSON.stringify(p.unit)}' data-medit='${JSON.stringify(p.medit)}' data-name="${p.name}" data-farm="${p.farm}" data-weigth='${JSON.stringify(p.weigth || null)}'>${p.name}</option>`).join('');
 }
 
 document.getElementById('outboundProduct')?.addEventListener('change', function() {
     const selected = this.options[this.selectedIndex];
     if (!selected.value) return;
-    const medit = selected.getAttribute('data-medit');
-    document.getElementById('outboundFarm').value = ""; // Reset farm selection
-    document.getElementById('outboundUnit').value = medit; // Display measure
-    document.getElementById('outboundExtraFields').classList.remove('hidden'); // Show extra fields
-    document.getElementById('outboundShedContainer').classList.add('hidden'); // Ocultar galpón para salida de productos
+    
+    const farmName = selected.dataset.farm;
+    const weigthData = JSON.parse(selected.getAttribute('data-weigth') || 'null');
+    const outboundUnitsContainer = document.getElementById('outboundUnitsContainer');
+    outboundUnitsContainer.innerHTML = '';
+
+    document.getElementById('outboundFarm').value = farmName || "";
+    document.getElementById('outboundDescription').value = "";
+
+    if (weigthData && typeof weigthData === 'object' && Object.keys(weigthData).length > 0) {
+        outboundUnitsContainer.innerHTML = Object.entries(weigthData).map(([medit, stock]) => `
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label>
+                <input type="text" class="outbound-unid-input" data-medit="${medit}" placeholder="0" data-max="${stock}">
+                <div style="font-size: 11px; color: #636e72; text-align: center;">Disp: ${formatNumber(stock)}</div>
+            </div>
+        `).join('');
+    } else {
+        const stock = JSON.parse(selected.dataset.unit || '0');
+        const medit = JSON.parse(selected.dataset.medit || '[]')[0] || 'N/A';
+        outboundUnitsContainer.innerHTML = `
+            <div style="flex: 1;"><label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label><input type="text" class="outbound-unid-input" data-medit="${medit}" placeholder="0" data-max="${stock}"><div style="font-size: 11px; color: #636e72; text-align: center;">Disp: ${formatNumber(stock)}</div></div>
+        `;
+    }
+
+    document.getElementById('outboundExtraFields').classList.remove('hidden');
 });
 
 // Carga de galpones para el formulario de salida al seleccionar granja
@@ -1085,71 +1115,69 @@ async function updateShedUsage(farm, number, amount, isEntry) {
 document.getElementById('formOutboundInventory')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    const productName = document.getElementById('outboundProduct').value;
-    const outboundUnid = parseInt(document.getElementById('outboundUnid').value.replace(/\./g, '')) || 0;
-    const rawAmount = outboundUnid;
+    const productSelect = document.getElementById('outboundProduct');
+    const selectedOption = productSelect.options[productSelect.selectedIndex];
+    const productId = selectedOption.value;
+    const productName = selectedOption.dataset.name;
+    
+    const weigthData = {};
+    let hasExceededStock = false;
+    document.querySelectorAll('.outbound-unid-input').forEach(input => {
+        const medit = input.dataset.medit;
+        const value = parseFloat(input.value.replace(/\./g, '')) || 0;
+        const max = parseFloat(input.dataset.max) || 0;
+        if (value > max) hasExceededStock = true;
+        if (medit && value > 0) weigthData[medit] = value;
+    });
+
+    if (hasExceededStock) return showToast("La cantidad de salida excede el stock disponible.", "error");
+
     const farmName = document.getElementById('outboundFarm').value;
     const moveDate = document.getElementById('outboundDate').value;
     const description = document.getElementById('outboundDescription').value;
-    const outboundMedit = document.getElementById('outboundUnit').value; // Medida
-    const shedValue = document.getElementById('outboundShed').value;
 
-    // 1. Registro en tabla movements (tipo salida, proveedor vacío)
-    const { error: moveError } = await _supabase.from('movements').insert([{
-        name: productName,
-        type: "salida",
-        amount: rawAmount,
-        farm: farmName,
-        medit: outboundMedit, // Guardar medida
-        shed: shedValue || null,
-        // categorie: productSelect.options[productSelect.selectedIndex].getAttribute('data-cat') || '', // La categoría ya no se guarda en movimientos
-        date_movement: moveDate,
-        provider: "",
-        description: description,
-        created_at: getColombiaTimestamp()
-    }]);
+    // 2. Actualización de tabla products (Resta de stock)
+    const { data: currentProd, error: prodError } = await _supabase
+        .from('products')
+        .select('unit')
+        .eq('id', productId)
+        .single();
 
-    if (moveError) {
-        showToast("Error al registrar salida: " + moveError.message, "error");
+    if (prodError || !currentProd) {
+        showToast("Error: No se encontró el producto en el inventario.", "error");
         return;
     }
 
-    // 2. Actualización de tabla inventory (Resta técnica de saldos)
-    let invQuery = _supabase
-        .from('inventory')
-        .select('amount')
-        .eq('product', productName)
-        .eq('medit', outboundMedit) // Filtrar por medida
-        .eq('farm', farmName);
+    const newWeigth = { ...(currentProd.weigth || {}) };
+    Object.entries(weigthData).forEach(([medit, value]) => {
+        newWeigth[medit] = (newWeigth[medit] || 0) - value;
+    });
+
+    const { error: updateError } = await _supabase.from('products').update({ 
+        unit: Object.values(newWeigth)[0] || 0,
+        weigth: newWeigth,
+        description: description 
+    }).eq('id', productId);
+
+    // Registrar movimiento en Kardex por cada medida afectada
+    for (const [medit, value] of Object.entries(weigthData)) {
+        if (value > 0) {
+            await _supabase.from('movements').insert([{
+                name: productName, type: "salida", amount: value, farm: farmName,
+                medit: medit, date_movement: moveDate, provider: "",
+                description: description, created_at: getColombiaTimestamp()
+            }]);
+        }
+    }
     
-    // No longer filtering by shed for product inventory
-    const { data: currentInv } = await invQuery.maybeSingle();
-
-    if (!currentInv) {
-        showToast("Error: El producto no se encuentra en la granja seleccionada.", "error");
-        return;
-    }
-
-    const newTotal = (currentInv.amount || 0) - rawAmount;
-
-    let updateQuery = _supabase
-        .from('inventory')
-        .update({ amount: newTotal })
-        .eq('medit', outboundMedit)
-        .eq('product', productName)
-        .eq('farm', farmName);
-
-    // No longer updating by shed for product outbound
-    const { error: updateError } = await updateQuery;
-
     if (updateError) {
         showToast("Error al actualizar existencias: " + updateError.message, "error");
     } else {
         showToast("Salida de inventario procesada correctamente");
-        e.target.reset();
+        e.target.reset(); // Limpia el formulario
         document.getElementById('outboundExtraFields').classList.add('hidden');
         closeModals();
-        document.getElementById('btnGestionInventario').click();
+        renderProductsView();
     }
 });
 
@@ -1163,8 +1191,8 @@ document.getElementById('formCreateFarm')?.addEventListener('submit', async (e) 
         name: document.getElementById('farmName').value,
         address: document.getElementById('farmAddress').value,
         // Ingeniería de Datos: 'animals' ahora es un array de strings (tipos de animales)
-        animals: document.getElementById('farmAnimals').value.split(',').map(item => item.trim()).filter(item => item !== ''),
         // Ingeniería de Datos: 'animals_capacity' ahora es un solo número (capacidad máxima total)
+        animals: [], // Se elimina la entrada manual de animales aquí
         animals_capacity: parseInt(document.getElementById('farmCapacity').value)
     };
 
@@ -1184,7 +1212,7 @@ document.getElementById('formCreateFarm')?.addEventListener('submit', async (e) 
     } else {
         showToast(isEdit ? "Granja actualizada exitosamente" : "Granja creada exitosamente");
         closeModals();
-        document.getElementById('btnGestionGranjas').click(); // Refresco de vista
+        document.getElementById('btnGestionGranjas').click();
     }
 });
 
@@ -1192,7 +1220,7 @@ document.getElementById('formCreateFarm')?.addEventListener('submit', async (e) 
 document.getElementById('btnGestionGranjas').addEventListener('click', async () => {
     // Gestión de Interfaz: Conmutación de vistas
     document.getElementById('usersView').classList.add('hidden');
-    document.getElementById('suppliersView')?.classList.add('hidden');
+    document.getElementById('suppliersView').classList.add('hidden');
     document.getElementById('productsView')?.classList.add('hidden');
     document.getElementById('inventoryView')?.classList.add('hidden');
     const farmsView = document.getElementById('farmsView');
@@ -1235,7 +1263,7 @@ function renderFarmsTable(farms) {
                     <tr>
                         <td>${f.name || 'Sin nombre'}</td>
                         <td>${f.address || 'N/A'}</td>
-                        <td>${Array.isArray(f.animals) ? f.animals.join(', ') : (f.animals || 'N/A')}</td>
+                        <td>${Array.isArray(f.animals) && f.animals.length > 0 ? f.animals.join(', ') : 'No aplica'}</td>
                         <td>${formatNumber(f.animals_capacity)}</td>
                         <td>${formatNumber(f.animals_in_farm)}</td>
                         <td>
@@ -1269,7 +1297,7 @@ document.getElementById('btnGestionProveedores')?.addEventListener('click', asyn
     // Gestión de Interfaz: Conmutación de vistas
     document.getElementById('usersView').classList.add('hidden');
     document.getElementById('farmsView').classList.add('hidden');
-    document.getElementById('productsView')?.classList.add('hidden');
+    document.getElementById('productsView').classList.add('hidden');
     document.getElementById('inventoryView')?.classList.add('hidden');
     const suppliersView = document.getElementById('suppliersView');
     suppliersView.classList.remove('hidden');
@@ -1353,53 +1381,52 @@ document.getElementById('formCreateSupplier')?.addEventListener('submit', async 
 
 document.getElementById('btnGestionProductos')?.addEventListener('click', async () => {
     document.getElementById('welcomeMessage')?.classList.add('hidden');
-    document.getElementById('usersView').classList.add('hidden');
-    document.getElementById('farmsView').classList.add('hidden');
-    document.getElementById('suppliersView').classList.add('hidden');
-    document.getElementById('inventoryView')?.classList.add('hidden');
-    const productsView = document.getElementById('productsView');
-    productsView.classList.remove('hidden');
-    
-    const tableContainer = document.getElementById('productsTableContainer');
-    tableContainer.innerHTML = "<p style='padding:40px; text-align:center; color:#636e72;'>Realice una búsqueda o seleccione una categoría para ver los productos</p>";
+    renderProductsView();
+});
 
-    const searchInput = document.getElementById('searchProductInput');
-    if (searchInput) {
-        searchInput.value = "";
-        searchInput.oninput = () => loadFilteredProducts();
-    }
+document.getElementById('btnGestionInventario')?.addEventListener('click', () => {
+    document.getElementById('welcomeMessage')?.classList.add('hidden');
+    renderInventoryView('sheds');
 });
 
 function renderProductsTable(products) {
     const tableContainer = document.getElementById('productsTableContainer');
+
+    const formatWeightData = (p) => {
+        if (p.weigth && typeof p.weigth === 'object' && Object.keys(p.weigth).length > 0) {
+            return Object.entries(p.weigth)
+                .map(([key, value]) => `${formatNumber(value)} ${key}`)
+                .join(', ');
+        }
+        // Fallback para productos que no usan el formato JSON
+        return `${formatNumber(p.unit)} ${Array.isArray(p.medit) ? p.medit.join(', ') : p.medit}`;
+    };
+
     let html = `
         <table>
             <thead>
+                <tr>
                     <th>Código</th>
                     <th>Nombre</th>
-                    <th>Unidad</th>
-                    <th>Medida</th>
-                    <th>Precio Compra</th>
-                    <th>Precio Venta</th>
-                    <th>Precio Final de Compra</th>
+                    <th>Granja</th>
+                    <th>Cantidad</th>
+                    <th style="width: 120px;">Precio Venta</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
-                ${products.length === 0 ? '<tr><td colspan="8" style="text-align:center;">No hay datos para mostrar en este momento</td></tr>' : products.map(p => `
+                ${products.length === 0 ? '<tr><td colspan="6" style="text-align:center;">No hay datos para mostrar en este momento</td></tr>' : products.map(p => `
                     <tr>
-                        <td>${p.code || 'N/A'}</td>
+                        <td>${p.inventory_code || p.base_code || 'No aplica'}</td>
                         <td>${p.name || 'Sin nombre'}</td>
-                        <td>${formatNumber(p.unit)}</td>
-                        <td>${p.medit || 'N/A'}</td>
-                        <td>$ ${formatNumber(p.buy_price)}</td>
-                        <td>$ ${formatNumber(p.sale_price)}</td>
-                        <td>$ ${formatNumber(p.total)}</td>
+                        <td>${p.farm || 'No aplica'}</td>
+                        <td>${formatWeightData(p)}</td>
+                        <td>${p.sale_price === null ? 'No aplica' : `$ ${formatNumber(p.sale_price)}`}</td>
                         <td>
                             <div style="display:flex; gap:5px;">
-                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editProduct('${p.code}')">Editar</button>
+                            <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editInventoryItem('${p.id}')">Editar</button>
                                 ${p.animal ? `<button class="action-btn" style="margin:0; padding:5px 10px; background: #6c5ce7;" onclick="openConfigAnimalFields('${p.name}')">Configurar</button>` : ''}
-                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteProduct('${p.code}')">Borrar</button>
+                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteProduct('${p.base_code}')">Borrar</button>
                             </div>
                         </td>
                     </tr>
@@ -1409,6 +1436,123 @@ function renderProductsTable(products) {
     tableContainer.innerHTML = html;
 }
 
+async function renderBaseProducts() {
+    const container = document.getElementById('baseProductsListContainer');
+    container.innerHTML = "<p style='padding:20px; text-align:center;'>Cargando definiciones de productos...</p>";
+
+    const { data, error } = await _supabase.from('products').select('*').eq('inventory', false).order('name');
+
+    if (error) {
+        return container.innerHTML = `<p class="error-msg">Error al cargar productos base: ${error.message}</p>`;
+    }
+
+    const formatWeightData = (p) => {
+        if (p.weigth && typeof p.weigth === 'object' && Object.keys(p.weigth).length > 0) {
+            return Object.entries(p.weigth)
+                .map(([key, value]) => `${formatNumber(value)} ${key}`)
+                .join(', ');
+        }
+        // Fallback para productos que no usan el formato JSON
+        return `${formatNumber(p.unit)} ${Array.isArray(p.medit) ? p.medit.join(', ') : p.medit}`;
+    };
+
+    let html = `
+        <table>
+            <thead>
+                <tr>
+                    <th>Código</th><th>Nombre</th><th>Cantidad</th><th>Precio Compra</th><th>Precio Venta</th><th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${data.length === 0 ? '<tr><td colspan="6" style="text-align:center;">No hay productos definidos.</td></tr>' : data.map(p => `
+                    <tr>
+                        <td>${p.base_code || 'No aplica'}</td>
+                        <td>${p.name}</td>
+                        <td>${formatWeightData(p)}</td>
+                        <td>${p.buy_price === null ? 'No aplica' : `$ ${formatNumber(p.buy_price)}`}</td>
+                        <td>${p.sale_price === null ? 'No aplica' : `$ ${formatNumber(p.sale_price)}`}</td>
+                        <td>
+                            <div style="display:flex; gap:5px;">
+                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editProduct('${p.base_code}')">Editar</button>
+                                ${p.animal ? `<button class="action-btn" style="margin:0; padding:5px 10px; background: #6c5ce7;" onclick="openConfigAnimalFields('${p.name}')">Configurar</button>` : ''}
+                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteProduct('${p.base_code}')">Borrar</button>
+                            </div>
+                        </td>
+                    </tr>`).join('')}
+            </tbody>
+        </table>`;
+    container.innerHTML = html;
+}
+
+document.getElementById('prodIsAnimal')?.addEventListener('change', (e) => {
+    const priceContainer = document.getElementById('prodPriceContainer');
+    const buyPrice = document.getElementById('prodBuyPrice');
+    const salePrice = document.getElementById('prodSalePrice');
+    const forSaleContainer = document.getElementById('prodForSaleContainer');
+    const salePriceContainer = document.getElementById('prodSalePriceContainer');
+
+    if (e.target.checked) {
+        // Si es animal, se oculta el precio de venta y el check "para la venta"
+        salePriceContainer.classList.add('hidden');
+        forSaleContainer.classList.add('hidden');
+        salePrice.removeAttribute('required'); // Se elimina el requisito para evitar el error "not focusable"
+    } else {
+        // Si no es animal, se muestran ambos y se re-evalúa la visibilidad del precio de venta
+        salePriceContainer.classList.remove('hidden');
+        forSaleContainer.classList.remove('hidden');
+        updateSalePriceVisibility(); // Llamar a la función que gestiona el 'required'
+    }
+});
+
+function updateSalePriceVisibility() {
+    const forSaleCheck = document.getElementById('prodForSale');
+    const salePriceContainer = document.getElementById('prodSalePriceContainer');
+    const salePrice = document.getElementById('prodSalePrice');
+    if (!forSaleCheck || !salePriceContainer || !salePrice) return;
+
+    const isAnimal = document.getElementById('prodIsAnimal')?.checked;
+    const hasWeight = document.getElementById('prodHasWeight')?.checked;
+    const salePriceKgContainer = document.getElementById('prodSalePriceKgContainer');
+
+    if (forSaleCheck.checked && !isAnimal) {
+        salePriceContainer.classList.remove('hidden');
+        salePrice.setAttribute('required', 'required');
+        if (hasWeight && salePriceKgContainer) salePriceKgContainer.classList.remove('hidden');
+    } else {
+        salePriceContainer.classList.add('hidden');
+        salePrice.removeAttribute('required');
+        if (salePriceKgContainer) salePriceKgContainer.classList.add('hidden');
+    }
+}
+
+// FASE 12: Actualizar placeholder del precio de venta según la medida seleccionada.
+document.getElementById('prodMedit')?.addEventListener('change', function() {
+    const salePriceInput = document.getElementById('prodSalePrice');
+    if (salePriceInput) {
+        const selectedMedit = this.options[this.selectedIndex].text;
+        const newPlaceholder = `Precio venta (${selectedMedit})`;
+        salePriceInput.placeholder = newPlaceholder;
+    }
+});
+
+document.getElementById('prodForSale')?.addEventListener('change', updateSalePriceVisibility);
+
+document.getElementById('prodHasWeight')?.addEventListener('change', (e) => {
+    const weightContainer = document.getElementById('prodWeightContainer');
+    const salePriceKgContainer = document.getElementById('prodSalePriceKgContainer');
+    const forSale = document.getElementById('prodForSale')?.checked;
+
+    if (e.target.checked) {
+        // Ingeniería de Sistemas: Verificación de existencia de elementos para evitar errores de null.
+        if (weightContainer) weightContainer.classList.remove('hidden');
+        // La visibilidad del precio por KG ahora se controla en updateSalePriceVisibility
+    } else {
+        if (weightContainer) weightContainer.classList.add('hidden');
+        if (salePriceKgContainer) salePriceKgContainer.classList.add('hidden');
+    }
+    updateSalePriceVisibility();
+});
+
 document.getElementById('formCreateProduct')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
@@ -1417,23 +1561,71 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
     const buyPrice = parseInt(document.getElementById('prodBuyPrice').value.replace(/\./g, '')) || 0;
     const hasWeight = document.getElementById('prodHasWeight')?.checked;
     const isAnimal = document.getElementById('prodIsAnimal')?.checked || false;
+    const toSale = !isAnimal && (document.getElementById('prodForSale')?.checked !== false);
 
-    const productData = {
-        code: document.getElementById('prodCode').value,
+    // Ingeniería de Datos: Validación para prevenir duplicados de productos base
+    if (!isEdit) {
+        const baseCode = document.getElementById('prodCode').value;
+        const { data: existing, error: checkError } = await _supabase
+            .from('products')
+            .select('base_code')
+            .eq('base_code', baseCode)
+            .eq('inventory', false)
+            .maybeSingle();
+
+        if (checkError) return showToast("Error de validación: " + checkError.message, "error");
+        if (existing) return showToast(`Error: Ya existe una definición de producto con el código ${baseCode}.`, "error");
+    }
+
+
+    let productData = {
+        base_code: document.getElementById('prodCode').value,
         name: document.getElementById('prodName').value,
-        unit: unit,
-        medit: document.getElementById('prodMedit').value,
         buy_price: buyPrice,
-        sale_price: parseInt(document.getElementById('prodSalePrice').value.replace(/\./g, '')) || 0,
-        total: unit * buyPrice,
-        weigth: hasWeight ? (parseFloat(document.getElementById('prodWeight').value) || 0) : null,
-        animal: isAnimal
+        total: isAnimal ? 0 : unit * buyPrice,
+        animal: isAnimal,
+        to_sale: toSale
     };
+
+    // FASE 11: Lógica para guardar precios de venta en JSONB
+    const selectedMedit = document.getElementById('prodMedit').value;
+    if (toSale) {
+        if (hasWeight) {
+            const priceUnit = parseInt(document.getElementById('prodSalePrice').value.replace(/\./g, '')) || 0;
+            const priceKg = parseInt(document.getElementById('prodSalePriceKg').value.replace(/\./g, '')) || 0;
+            productData.sale_price = { [selectedMedit]: priceUnit, 'KG': priceKg };
+        } else {
+            const priceUnit = parseInt(document.getElementById('prodSalePrice').value.replace(/\./g, '')) || 0;
+            productData.sale_price = { [selectedMedit]: priceUnit };
+        }
+    } else {
+        productData.sale_price = null;
+    }
+
+    // Nueva lógica para `medit` (array) y `weigth` (jsonb)
+    productData.medit = [selectedMedit];
+    productData.unit = unit; // `unit` sigue siendo la cantidad principal
+
+    if (hasWeight) {
+        productData.medit.push('KG');
+        productData.weigth = {
+            [selectedMedit]: unit,
+            'KG': parseFloat(document.getElementById('prodWeight').value) || 0
+        };
+    } else {
+        productData.weigth = null;
+    }
 
     let result;
     if (isEdit) {
-        result = await _supabase.from('products').update(productData).eq('code', form.dataset.originalId);
+        const originalId = form.dataset.originalId;
+        // Determinar si estamos editando una definición (por base_code) o un item de inventario (por id)
+        const isInventoryItem = form.dataset.isInventory === 'true';
+        const idColumn = isInventoryItem ? 'id' : 'base_code';
+
+        result = await _supabase.from('products').update(productData).eq(idColumn, originalId);
     } else {
+        productData.inventory = false; // Nuevo producto es una definición, no está en inventario
         productData.created_at = getColombiaTimestamp();
         result = await _supabase.from('products').insert([productData]);
     }
@@ -1443,8 +1635,35 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
     else { 
         showToast(isEdit ? "Producto actualizado" : "Producto agregado exitosamente"); 
         closeModals(); 
-        document.getElementById('btnGestionProductos').click(); 
+        // Refrescar la vista correcta
+        const isInventoryItem = form.dataset.isInventory === 'true';
+        if (isInventoryItem) renderProductsView();
+        else renderBaseProducts();
     }
+});
+
+async function loadFarmsForProductModal() {
+    const farmSelect = document.getElementById('prodAnimalFarm');
+    const { data, error } = await _supabase.from('farms').select('name').order('name');
+    if (error) return;
+    farmSelect.innerHTML = '<option value="">Seleccione granja...</option>' + 
+        (data?.map(f => `<option value="${f.name}">${f.name}</option>`).join('') || '');
+}
+
+async function loadShedsForProductModal(farmName) {
+    const shedSelect = document.getElementById('prodAnimalShed');
+    if (!farmName) {
+        shedSelect.innerHTML = '<option value="">Seleccione granja primero</option>';
+        return;
+    }
+    const { data, error } = await _supabase.from('sheds').select('number').eq('farm', farmName).order('number');
+    if (error) return;
+    shedSelect.innerHTML = '<option value="">Seleccione galpón...</option>' + 
+        (data?.map(s => `<option value="${s.number}">${s.number}</option>`).join('') || '');
+}
+
+document.getElementById('prodAnimalFarm')?.addEventListener('change', function() {
+    loadShedsForProductModal(this.value);
 });
 
 async function loadFilteredInventory(mode) {
@@ -1453,61 +1672,65 @@ async function loadFilteredInventory(mode) {
     const category = document.getElementById('filterInventoryCategory')?.value;
     const animal = document.getElementById('filterInventoryAnimal')?.value;
     const shed = document.getElementById('filterInventoryShed')?.value;
-    const date = document.getElementById('filterInventoryDate')?.value;
-    const tableContainer = document.getElementById('inventoryTableContainer'); // Moved up for early exit
+    const date = document.getElementById('filterInventoryDate')?.value; // Este filtro ahora aplica a products
+    const tableContainer = document.getElementById('productsTableContainer');
 
-    if (mode === 'sheds') { // This block remains for sheds
-        if (!farm && !shed && !animal) { // If no filters, show placeholder
-            tableContainer.innerHTML = "<p style='padding:40px; text-align:center; color:#636e72;'>Seleccione un filtro para visualizar los galpones</p>"; // Corrected message
-            return; // Exit early
-        }
-        let query = _supabase.from('sheds').select('*');
-        if (farm && farm !== 'all') query = query.eq('farm', farm);
-        if (shed && shed !== 'all') query = query.eq('number', shed);
-        if (animal && animal !== 'all') query = query.eq('animal', animal);
-        const { data, error } = await query;
-        if (error) return tableContainer.innerHTML = `<p class="error-msg">Error: ${error.message}</p>`;
-        renderShedsTable(data);
-        return;
-    }
+    tableContainer.innerHTML = "<p style='padding:20px;'>Cargando productos...</p>";
 
-    // For 'products' mode, initial empty state until interaction
-    if (!search && !farm && !category && !animal && !shed && !date) {
-        tableContainer.innerHTML = "<p style='padding:40px; text-align:center; color:#636e72;'>Realice una búsqueda o seleccione un filtro para visualizar los datos</p>";
-        return;
-    }
-
-    tableContainer.innerHTML = "<p style='padding:20px;'>Cargando inventario...</p>";
-
-    let query = _supabase.from('inventory').select('*');
+    let query = _supabase.from('products').select('*').eq('inventory', true); // Mostrar solo productos en inventario
     if (farm && farm !== 'all') query = query.eq('farm', farm);
-    // Removed shed filter for product inventory
+    if (shed && shed !== 'all') query = query.eq('shed', shed);
     if (date) query = query.gte('created_at', `${date}T00:00:00`).lte('created_at', `${date}T23:59:59`);
 
     const { data, error } = await query;
     if (error) {
-        tableContainer.innerHTML = `<p class="error-msg">Error: ${error.message}</p>`;
+        tableContainer.innerHTML = `<p class="error-msg">Error cargando productos: ${error.message}</p>`;
         return;
     }
 
     let filtered = data || [];
-    // No mostrar productos animales en el inventario de productos
-    const { data: animalProducts } = await _supabase.from('products').select('name').eq('animal', true);
-    const animalNames = new Set((animalProducts || []).map(p => p.name));
-    filtered = filtered.filter(item => !animalNames.has(item.product));
-
-    if (category && category !== 'all') { // Category filter only for products
-        filtered = filtered.filter(item => item.categorie === category);
-    }
 
     if (search) {
         filtered = filtered.filter(item => 
-            normalizeText(item.product).includes(search) || 
-            normalizeText(item.code).includes(search)
+            normalizeText(item.name).includes(search) || 
+            normalizeText(item.inventory_code).includes(search)
         );
     }
 
-    renderInventoryTable(filtered, mode);
+    renderProductsTable(filtered);
+}
+
+async function renderProductsView() {
+    window.CURRENT_VIEW_MODE = 'products';
+    document.querySelectorAll('.view-section').forEach(v => v.classList.add('hidden'));
+    document.getElementById('productsView').classList.remove('hidden');
+
+    const tableContainer = document.getElementById('productsTableContainer');
+    tableContainer.innerHTML = "<p style='padding:40px; text-align:center; color:#636e72;'>Realice una búsqueda o seleccione un filtro para visualizar los productos</p>";
+
+    // Configurar filtros
+    const searchInput = document.getElementById('searchInventoryInput');
+    const farmSelect = document.getElementById('filterInventoryFarm');
+    const shedSelect = document.getElementById('filterInventoryShed');
+    const dateInput = document.getElementById('filterInventoryDate');
+
+    [searchInput, farmSelect, shedSelect, dateInput].forEach(el => {
+        if (el) el.onchange = () => loadFilteredInventory('products');
+    });
+    if (searchInput) searchInput.oninput = () => loadFilteredInventory('products');
+
+    // Poblar filtros
+    const { data: farms } = await _supabase.from('farms').select('name').order('name');
+    if (farmSelect) {
+        farmSelect.innerHTML = '<option value="" disabled selected hidden>Filtrar por granja...</option><option value="all">Todas</option>' +
+            (farms?.map(f => `<option value="${f.name}">${f.name}</option>`).join('') || '');
+    }
+    const { data: sheds } = await _supabase.from('sheds').select('number').order('number');
+    if (shedSelect) {
+        const uniqueSheds = [...new Set(sheds?.map(s => s.number))] || [];
+        shedSelect.innerHTML = '<option value="" disabled selected hidden>Filtrar por galpón...</option><option value="all">Ver todos los galpones</option>' +
+            uniqueSheds.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
 }
 
 // FASE 6.1: Ingeniería de Backend y Frontend para Gestión de Inventario
@@ -1517,7 +1740,7 @@ document.getElementById('btnGestionInventario')?.addEventListener('click', () =>
 });
 
 async function renderInventoryView(mode) {
-    window.CURRENT_INVENTORY_MODE = mode;
+    window.CURRENT_VIEW_MODE = mode; // 'sheds'
     // Gestión de Interfaz: Conmutación de vistas
     document.getElementById('usersView').classList.add('hidden');
     document.getElementById('farmsView').classList.add('hidden');
@@ -1525,102 +1748,16 @@ async function renderInventoryView(mode) {
     document.getElementById('productsView').classList.add('hidden');
     const inventoryView = document.getElementById('inventoryView');
     inventoryView.classList.remove('hidden');
-
-    // Actualización dinámica del título según el modo
-    const titleHeader = inventoryView.querySelector('h3');
-    if (mode === 'products') titleHeader.textContent = "Inventario de Productos";
-    else if (mode === 'sheds') titleHeader.textContent = "Galpones"; // Only two modes now
     
     const tableContainer = document.getElementById('inventoryTableContainer');
-    const filterBar = document.getElementById('inventoryFilterBar');
-    const btnInbound = document.getElementById('btnInventoryInbound');
-    const btnOutbound = document.getElementById('btnInventoryOutbound');
-    const btnShed = document.getElementById('btnInventoryShed');
+    tableContainer.innerHTML = "<p style='padding:40px; text-align:center; color:#636e72;'>Cargando galpones...</p>";
 
-    // FASE 11.3: Configuración dinámica de la barra de acciones y filtros
-    filterBar?.classList.remove('hidden');
-    
-    // Ocultar todos los botones de acción primero
-    btnInbound?.classList.add('hidden');
-    btnOutbound?.classList.add('hidden');
-    btnShed?.classList.add('hidden');
-
-    if (mode === 'sheds') {
-        btnShed?.classList.remove('hidden');
-    } else { // Modo 'products' por defecto
-        btnInbound?.classList.remove('hidden');
-        btnOutbound?.classList.remove('hidden');
-        btnInbound.textContent = "Ingresar producto";
-        btnOutbound.textContent = "Sacar producto";
+    const { data, error } = await _supabase.from('sheds').select('*');
+    if (error) {
+        tableContainer.innerHTML = `<p class="error-msg">Error: ${error.message}</p>`;
+        return;
     }
-
-    const searchInput = document.getElementById('searchInventoryInput');
-    const farmSelect = document.getElementById('filterInventoryFarm');
-    const catSelect = document.getElementById('filterInventoryCategory');
-    const animalSelect = document.getElementById('filterInventoryAnimal');
-    const shedSelect = document.getElementById('filterInventoryShed');
-    const dateInput = document.getElementById('filterInventoryDate');
-
-    // Limpieza de campos al entrar
-    [searchInput, farmSelect, catSelect, animalSelect, shedSelect, dateInput].forEach(el => { if(el) el.value = ""; });
-
-    if (mode === 'sheds') { // Only for sheds
-        catSelect?.classList.add('hidden');
-        animalSelect?.classList.remove('hidden');
-        shedSelect?.classList.remove('hidden');
-        searchInput?.classList.add('hidden');
-        dateInput?.classList.add('hidden');
-    } else { // For products
-        searchInput?.classList.remove('hidden');
-        dateInput?.classList.remove('hidden');
-        catSelect?.classList.remove('hidden');
-        animalSelect?.classList.add('hidden');
-        shedSelect?.classList.add('hidden'); // Shed select is only for sheds view
-    }
-
-    // Poblar Granja
-    const { data: farms } = await _supabase.from('farms').select('name').order('name');
-    if (farmSelect) {
-        farmSelect.innerHTML = '<option value="" disabled selected hidden>Filtrar por granja...</option><option value="all">Todas</option>' +
-            (farms?.map(f => `<option value="${f.name}">${f.name}</option>`).join('') || '');
-    }
-
-    // Poblar Categoría (Productos)
-    // El filtro de categoría se elimina de la vista de inventario ya que los productos ya no tienen categorías
-    catSelect?.classList.add('hidden'); // Asegurarse de que el filtro de categoría esté oculto
-
-    // Poblar Animales (Productos cuya categoría coincida con animal/animales) - only for sheds view
-    // Ahora se obtienen los animales de la configuración de las granjas, no de categorías de productos
-    if (mode === 'sheds' && animalSelect) {
-        const { data: allFarms } = await _supabase.from('farms').select('animals');
-        const uniqueAnimalNames = new Set();
-        allFarms?.forEach(farm => {
-            if (Array.isArray(farm.animals)) {
-                farm.animals.forEach(animal => uniqueAnimalNames.add(animal));
-            }
-        });
-        const animalsForFilter = Array.from(uniqueAnimalNames);
-        animalSelect.innerHTML = `<option value="" disabled selected hidden>Filtrar por ${mode === 'sheds' ? 'animal del galpón' : 'animal'}...</option><option value="all">Ver todos</option>` +
-            animalsForFilter.map(a => `<option value="${a}">${a}</option>`).join('');
-    }
-
-    // Poblar Galpones
-    if ((mode === 'animals' || mode === 'sheds') && shedSelect) {
-        const { data: sheds } = await _supabase.from('sheds').select('number').order('number');
-        const uniqueSheds = [...new Set(sheds?.map(s => s.number))] || [];
-        shedSelect.innerHTML = '<option value="" disabled selected hidden>Filtrar por galpón...</option><option value="all">Ver todos los galpones</option>' +
-            uniqueSheds.map(s => `<option value="${s}">${s}</option>`).join('');
-    }
-
-    const runFilter = () => loadFilteredInventory(mode);
-    [searchInput, farmSelect, catSelect, animalSelect, shedSelect, dateInput].forEach(el => {
-        if (el) {
-            el.onchange = runFilter;
-            if (el.id === 'searchInventoryInput') el.oninput = runFilter;
-        }
-    });
-
-    tableContainer.innerHTML = `<p style='padding:40px; text-align:center; color:#636e72;'>${mode === 'sheds' ? 'Seleccione un filtro para visualizar los galpones' : 'Realice una búsqueda o seleccione un filtro para visualizar los datos'}</p>`;
+    renderShedsTable(data);
 }
 
 function renderShedsTable(data) {
@@ -1657,45 +1794,6 @@ function renderShedsTable(data) {
                 `).join('')}
             </tbody>
         </table>`;
-}
-
-function renderInventoryTable(items) { // Removed mode parameter as it's always 'products' now
-    const tableContainer = document.getElementById('inventoryTableContainer');
-    // Shed column is no longer shown in product inventory
-    let html = `
-        <table>
-            <thead>
-                <tr>
-                    <th>Código</th>
-                    <th>Nombre</th>
-                    <th>Granja</th>
-                    <th>Medida</th> 
-                    <th>Cantidad</th>
-                    <th>Proveedor</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${items.length === 0 ? `<tr><td colspan="6" style="text-align:center;">No hay datos para mostrar en este momento</td></tr>` : items.map(item => `
-                    <tr>
-                        <td>${item.code || 'N/A'}</td>
-                        <td>${item.product || 'Sin nombre'}</td>
-                        <td>${item.farm || 'N/A'}</td>
-                        <td>${item.medit || 'N/A'}</td>
-                        <td>${formatInventoryAmount(item.amount)}</td>
-                        <td>${Array.isArray(item.provider) ? item.provider.join(', ') : (item.provider || 'N/A')}</td>
-                        <td>
-                            <div style="display:flex; gap:5px;">
-                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editInventoryItem('${item.id || item.product}')">Editar</button>
-                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteInventoryItem('${item.id || item.product}')">Borrar</button>
-                            </div>
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>`;
-    
-    tableContainer.innerHTML = html;
 }
 
 document.getElementById('btnGestionGranjas')?.addEventListener('click', () => {
@@ -1739,14 +1837,16 @@ const setupAutoCalc = (unidId, amountId, selectId) => {
 };
 
 // Formateo de precios en el registro de productos
-['prodBuyPrice', 'prodSalePrice'].forEach(id => {
-    document.getElementById(id)?.addEventListener('input', function(e) {
-        let val = e.target.value.replace(/\D/g, '');
-        e.target.value = formatNumber(val);
-        if (id === 'prodBuyPrice') updateProductTotalProjection();
+document.addEventListener('DOMContentLoaded', () => {
+    ['prodBuyPrice', 'prodSalePrice', 'prodSalePriceKg'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', function(e) {
+            let val = e.target.value.replace(/\D/g, '');
+            e.target.value = formatNumber(val);
+            if (id === 'prodBuyPrice') updateProductTotalProjection(); 
+        });
     });
+    document.getElementById('prodUnit')?.addEventListener('input', updateProductTotalProjection);
 });
-document.getElementById('prodUnit')?.addEventListener('input', updateProductTotalProjection);
 
     document.getElementById('welcomeMessage')?.classList.add('hidden');
 });
@@ -1807,8 +1907,8 @@ window.editFarm = async (name) => {
     form.dataset.originalId = name;
     showModal('modalCreateFarm');
     document.querySelector('#modalCreateFarm h4').textContent = "Editar Granja";
-    document.querySelector('#formCreateFarm button[type="submit"]').textContent = "Actualizar Granja";
-
+    document.querySelector('#formCreateFarm button[type="submit"]').textContent = "Actualizar";
+    
     document.getElementById('farmName').value = data.name;
     document.getElementById('farmAddress').value = data.address;
     document.getElementById('farmAnimals').value = Array.isArray(data.animals) ? data.animals.join(', ') : '';
@@ -1849,7 +1949,16 @@ window.deleteSupplier = async (nit) => {
 };
 
 window.editProduct = async (code) => {
-    const { data, error } = await _supabase.from('products').select('*').eq('code', code).single();
+    // FIX DEFINITIVO: El error 406 persiste porque .single() es estricto.
+    // Se cambia la lógica para tomar el primer resultado de un posible array,
+    // lo que evita el error y permite la edición incluso con duplicados existentes.
+    const { data: results, error } = await _supabase.from('products')
+        .select('*')
+        .eq('base_code', code)
+        .eq('inventory', false)
+        .limit(1);
+
+    const data = results ? results[0] : null;
     if (error || !data) return showToast("Error al cargar datos del producto", "error");
 
     const form = document.getElementById('formCreateProduct');
@@ -1860,59 +1969,58 @@ window.editProduct = async (code) => {
     document.querySelector('#formCreateProduct button[type="submit"]').textContent = "Actualizar Producto";
 
     document.getElementById('prodName').value = data.name;
-    document.getElementById('prodMedit').value = data.medit;
+    document.getElementById('prodMedit').value = Array.isArray(data.medit) ? data.medit[0] : data.medit;
     document.getElementById('prodUnit').value = data.unit;
     document.getElementById('prodBuyPrice').value = formatNumber(data.buy_price);
     document.getElementById('prodSalePrice').value = formatNumber(data.sale_price);
 
     // Poblar campos de peso
-    const hasWeight = data.weigth !== null && data.weigth !== undefined;
+    const hasWeight = data.weigth !== null;
     const checkWeight = document.getElementById('prodHasWeight');
     if (checkWeight) {
         checkWeight.checked = hasWeight;
         document.getElementById('prodWeightContainer').classList.toggle('hidden', !hasWeight);
-        document.getElementById('prodWeight').value = hasWeight ? data.weigth : "";
+        document.getElementById('prodWeight').value = hasWeight ? (data.weigth.KG || 0) : "";
     }
 
     const isAnimalCheck = document.getElementById('prodIsAnimal');
     if (isAnimalCheck) {
         isAnimalCheck.checked = data.animal || false;
+        document.getElementById('prodSalePriceContainer').classList.toggle('hidden', data.animal || false);
+        document.getElementById('prodForSaleContainer').classList.toggle('hidden', data.animal || false);
+    }
+    
+    const forSaleCheck = document.getElementById('prodForSale');
+    if (forSaleCheck) {
+        forSaleCheck.checked = data.to_sale !== false; // true por defecto
+        updateSalePriceVisibility();
     }
 
-    document.getElementById('prodCode').value = data.code; // Mover aquí para que se establezca después de resetear el modal
+    document.getElementById('prodCode').value = data.base_code;
     updateProductTotalProjection();
-};
-
-window.deleteProduct = async (code) => {
-    if (!confirm(`¿Está seguro de eliminar el producto con código ${code}?`)) return;
-    const { error } = await _supabase.from('products').delete().eq('code', code);
-    if (error) showToast("Error: " + error.message, "error");
-    else { 
-        showToast("Producto eliminado"); 
-        loadFilteredProducts(); // Refrescar la búsqueda actual
-    }
 };
 
 window.editShed = async (farm, number) => {
     const { data, error } = await _supabase.from('sheds').select('*').eq('farm', farm).eq('number', number).single();
     if (error || !data) return showToast("Error al cargar datos del galpón", "error");
 
-    await prepareShedModal();
-    const form = document.getElementById('formCreateShed');
-    form.dataset.mode = 'edit';
+    // Ahora usamos el nuevo formulario de edición
+    const form = document.getElementById('formEditShed');
     form.dataset.originalId = `${farm}-${number}`; // Identificador compuesto
-    showModal('modalCreateShed');
-    document.querySelector('#modalCreateShed h4').textContent = "Editar Galpón";
-    document.querySelector('#formCreateShed button[type="submit"]').textContent = "Actualizar Galpón";
+    showModal('modalEditShed');
 
-    const fSelect = document.getElementById('shedFarm');
+    // Cargar y configurar los campos del formulario de edición
+    const fSelect = document.getElementById('editShedFarm');
+    const aSelect = document.getElementById('editShedAnimal');
+    const { data: farms } = await _supabase.from('farms').select('name').order('name');
+    fSelect.innerHTML = '<option value="">Seleccione granja...</option>' + 
+        (farms?.map(f => `<option value="${f.name}">${f.name}</option>`).join('') || '');
     fSelect.value = data.farm;
-    fSelect.disabled = true; // No permitir cambiar granja en edición
 
-    await loadAnimalsForShed(data.farm);
-    document.getElementById('shedNumber').value = data.number;
-    document.getElementById('shedAnimal').value = data.animal;
-    document.getElementById('shedAbility').value = data.ability;
+    await loadAnimalsForShed(aSelect); // Pasar el selector correcto para cargar los animales
+    document.getElementById('editShedNumber').value = data.number;
+    aSelect.value = data.animal;
+    document.getElementById('editShedAbility').value = data.ability;
 };
 
 window.deleteShed = async (farm, number) => {
@@ -1921,7 +2029,7 @@ window.deleteShed = async (farm, number) => {
     if (error) showToast("Error: " + error.message, "error");
     else { 
         showToast("Galpón eliminado"); 
-        loadFilteredInventory('sheds'); 
+        renderInventoryView('sheds'); 
     }
 };
 
@@ -1943,6 +2051,11 @@ window.manageShedAnimals = async (farm, number) => {
     outboundTableBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #b2bec3;">Cargando registros...</div>';
 
     await renderShedAnimalRecords(farm, number);
+    
+    // Limpiar resultados de parámetros al abrir
+    document.getElementById('statsResultContainer').innerHTML = '<p style="text-align:center; color: #b2bec3;">Seleccione un rango de fechas y presione "Calcular" para ver los resultados.</p>';
+    document.getElementById('statsDateStart').value = '';
+    document.getElementById('statsDateEnd').value = '';
 
     // Mostrar el modal
     showModal('modalManageShedAnimals');
@@ -1951,6 +2064,8 @@ window.manageShedAnimals = async (farm, number) => {
 async function renderShedAnimalRecords(farm, number) {
     const inboundBody = document.getElementById('shedAnimalInboundTableBody');
     const outboundBody = document.getElementById('shedAnimalOutboundTableBody');
+    const inboundPricesBody = document.getElementById('inboundPricesTableBody');
+    const outboundPricesBody = document.getElementById('outboundPricesTableBody');
 
     const { data: batches, error: batchError } = await _supabase
         .from('animal_batches')
@@ -1974,6 +2089,8 @@ async function renderShedAnimalRecords(farm, number) {
     if (batchIds.length === 0) {
         inboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #b2bec3;">No hay entradas registradas</div>';
         outboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #b2bec3;">No hay salidas registradas</div>';
+        if(inboundPricesBody) inboundPricesBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #b2bec3;">No hay datos de precios.</div>';
+        if(outboundPricesBody) outboundPricesBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #b2bec3;">No hay datos de precios.</div>';
         return;
     }
 
@@ -1986,6 +2103,8 @@ async function renderShedAnimalRecords(farm, number) {
     if (recordsError) {
         inboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #d63031;">Error cargando registros</div>';
         outboundBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #d63031;">Error cargando registros</div>';
+        if(inboundPricesBody) inboundPricesBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #d63031;">Error cargando precios.</div>';
+        if(outboundPricesBody) outboundPricesBody.innerHTML = '<div style="text-align:center; padding: 15px; color: #d63031;">Error cargando precios.</div>';
         return showToast("Error cargando movimientos de animales", "error");
     }
 
@@ -1994,7 +2113,7 @@ async function renderShedAnimalRecords(farm, number) {
     const label = document.getElementById('shedAnimalLabel');
     const defaultAnimal = batches.length > 0 ? batches[0].animal_name : '';
     if (label) {
-        label.textContent = defaultAnimal ? `${defaultAnimal}` : 'Animal: --';
+        label.innerHTML = `Animal: <span style="color: #00b894;">${defaultAnimal || '--'}</span>`;
     }
 
     // Use the most recent animal as selected (no manual filtering)
@@ -2008,7 +2127,7 @@ async function renderShedAnimalRecords(farm, number) {
     const inbound = recs.filter(record => record.event_type === 'ingreso');
     const outbound = recs.filter(record => record.event_type === 'salida');
 
-    const buildGroupedHtml = (list) => {
+    const buildGroupedHtml = (list, includePrices = false) => {
         if (!list || list.length === 0) return '<div style="padding:15px; text-align:center; color:#b2bec3;">No hay registros</div>';
 
         // Fetch config for animal (use first record's batch animal)
@@ -2039,7 +2158,12 @@ async function renderShedAnimalRecords(farm, number) {
                 totalWeight += rec.initial_weight || 0;
                 const dyn = rec.dynamic_data || {};
                 Object.keys(dyn).forEach(k => {
-                    const val = dyn[k];
+                    // Si estamos en la tabla de precios, solo nos interesan los precios.
+                    if (includePrices && !k.startsWith('Precio: ')) return;
+                    // Si NO estamos en la tabla de precios, ignoramos los precios.
+                    if (!includePrices && k.startsWith('Precio: ')) return;
+
+                    const val = dyn[k] || 0;
                     const cfg = opMap[k];
                     let group = 'Otros';
                     if (cfg) {
@@ -2051,14 +2175,14 @@ async function renderShedAnimalRecords(farm, number) {
                         else if (op === 'formula_div') group = 'División/Porcentaje';
                     }
                     // Initialize
-                    if (groups[group][k] === undefined) groups[group][k] = { sum: 0, count: 0, display: (opMap[k]?.display || 'number') };
+                    if (groups[group][k] === undefined) groups[group][k] = { sum: 0, count: 0, op: cfg?.op, display: (opMap[k]?.display || 'number') };
                     groups[group][k].sum += parseFloat(val) || 0;
                     groups[group][k].count += 1;
                 });
             });
 
             // Build HTML: header with totalWeight and totalUnits, then grouped rows
-            let html = `<div style="padding:10px; display:flex; gap:20px; justify-content:center; font-weight:bold; color:#2d3436;"><div>Peso Inicial: ${formatNumber(totalWeight)}</div><div>Unidades: ${formatNumber(totalUnits)}</div></div>`;
+            let html = `<div style="padding:10px; display:flex; gap:20px; justify-content:center; font-weight:bold; color:#2d3436;"><div>Peso Inicial: ${formatNumber(totalWeight)} KG</div><div>Unidades: ${formatNumber(totalUnits)}</div></div>`;
             
             // Reorganize groups: keep Base ± Total in one row, combine Sumatoria + División/Porcentaje in another
             const rowOrder = ['Suma', 'Resta', 'Base ± Total', ['Sumatoria', 'División/Porcentaje'], 'Otros'];
@@ -2087,7 +2211,10 @@ async function renderShedAnimalRecords(farm, number) {
                 html += `<table style="width:100%; border-collapse: collapse; margin:0; border:1px solid #bdbdbd;">`;
                 // header row with field labels
                 html += `<thead><tr style="background:#f8f9fa;">
-                    ${labels.map(l => `<th style="text-align:center; padding:6px; font-size:13px; color:#636e72; border:1px solid #bdbdbd; font-weight:700;">${l}</th>`).join('')}
+                    ${labels.map(l => {
+                        const headerLabel = combinedItems[l].op === 'sum' ? `${l} KG` : l;
+                        return `<th style="text-align:center; padding:6px; font-size:13px; color:#636e72; border:1px solid #bdbdbd; font-weight:700;">${headerLabel}</th>`;
+                    }).join('')}
                 </tr></thead>`;
                 // single data row
                 html += `<tbody><tr>`;
@@ -2105,11 +2232,17 @@ async function renderShedAnimalRecords(farm, number) {
     };
 
     // Render inbound and outbound by awaiting buildGroupedHtml
-    const inboundHtml = await buildGroupedHtml(inbound);
-    const outboundHtml = await buildGroupedHtml(outbound);
+    const inboundHtml = await buildGroupedHtml(inbound, false);
+    const outboundHtml = await buildGroupedHtml(outbound, false);
+    const inboundPricesHtml = await buildGroupedHtml(inbound, true);
+    const outboundPricesHtml = await buildGroupedHtml(outbound, true);
 
     inboundBody.innerHTML = `<div style="padding:10px;">${inboundHtml}</div>`;
     outboundBody.innerHTML = `<div style="padding:10px;">${outboundHtml}</div>`;
+
+    // Poblar el nuevo modal de precios
+    if(inboundPricesBody) inboundPricesBody.innerHTML = `<div style="padding:10px;">${inboundPricesHtml}</div>`;
+    if(outboundPricesBody) outboundPricesBody.innerHTML = `<div style="padding:10px;">${outboundPricesHtml}</div>`;
 }
 
 // --- Gestión Dinámica de Producción ---
@@ -2233,6 +2366,7 @@ async function prepareInboundAnimalModal() {
     // Reiniciar formulario
     form.reset();
     delete form.dataset.mode;
+    delete form.dataset.lastSummations;
     delete form.dataset.oldUnits;
     delete form.dataset.oldWeight;
     document.getElementById('animalStockDisplay').classList.add('hidden');
@@ -2240,7 +2374,7 @@ async function prepareInboundAnimalModal() {
     // Ingeniería de Datos: Consultar productos marcados como animales
     const { data: animals, error } = await _supabase
         .from('products')
-        .select('code, name, unit, weigth, medit')
+        .select('base_code, name, unit, weigth, medit')
         .eq('animal', true)
         .order('name');
 
@@ -2250,7 +2384,7 @@ async function prepareInboundAnimalModal() {
     }
 
     select.innerHTML = '<option value="" disabled selected hidden>Seleccione animal...</option>' +
-        (animals || []).map(a => `<option value="${a.name}" data-code="${a.code}" data-unit="${a.unit}" data-weight="${a.weigth || 0}" data-medit="${a.medit || 'Unidad'}">${a.name}</option>`).join('');
+        (animals || []).map(a => `<option value="${a.name}" data-base-code="${a.base_code}" data-unit="${a.unit}" data-weight="${a.weigth?.KG || 0}" data-medit="${a.medit || 'Unidad'}">${a.name}</option>`).join('');
 
     // Listeners de tiempo real
     const updateDisplay = () => calculateAnimalInboundTotals();
@@ -2269,6 +2403,7 @@ async function loadAnimalInboundStock(select) {
     const farm = modalManage?.dataset.farm;
     const shedNumber = modalManage?.dataset.number;
 
+    select.dataset.lastSummations = "{}";
     const currentUnitsEl = document.getElementById('currentAnimalUnits');
     const currentWeightEl = document.getElementById('currentAnimalWeight');
 
@@ -2355,7 +2490,7 @@ async function prepareOutboundAnimalModal() {
     if (error) return showToast("Error al cargar lotes activos", "error");
 
     select.innerHTML = '<option value="" disabled selected hidden>Seleccione animal a retirar...</option>' +
-        (batches || []).map(b => `<option value="${b.animal_name}" data-code="${b.animal_code}" data-batch-id="${b.id}">${b.animal_name}</option>`).join('');
+        (batches || []).map(b => `<option value="${b.animal_name}" data-base-code="${b.animal_code}" data-batch-id="${b.id}">${b.animal_name}</option>`).join('');
 
     select.onchange = async () => {
         const batchId = select.options[select.selectedIndex].dataset.batchId;
@@ -2429,6 +2564,12 @@ async function loadDynamicProductionFields(animalName, formType = 'ingreso') {
                            placeholder="Bultos" 
                            style="padding: 6px 8px; height: 32px; font-size: 13px; border-left: 3px solid #fdcb6e; background: #fffbf0;" 
                            min="0" step="1">
+                    <input type="number" 
+                           class="price-dynamic-input" 
+                           data-label="${f.field_label}" 
+                           placeholder="Precio x bulto" 
+                           style="padding: 6px 8px; height: 32px; font-size: 13px; border-left: 3px solid #0984e3; background: #ebf5fb; width: 100px;" 
+                           min="0" step="1000">
                 ` : ''}
             </div>
         </div>
@@ -2452,18 +2593,38 @@ async function loadDynamicProductionFields(animalName, formType = 'ingreso') {
     });
 }
 
+// FASE 13: Listener para mostrar/ocultar precios por KG
+['inboundRegisterPriceKg', 'outboundRegisterPriceKg'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', function() {
+        const containerId = id.startsWith('inbound') ? 'dynamicProductionFields' : 'dynamicProductionFieldsOut';
+        document.querySelectorAll(`#${containerId} .price-kg-dynamic-input`).forEach(input => input.parentElement.classList.toggle('hidden', !this.checked));
+    });
+});
+
 function calculateAnimalInboundTotals() {
     const select = document.getElementById('inboundAnimalProduct');
     const selected = select.options[select.selectedIndex];
     if (!selected || selected.disabled) return;
 
     // Entradas del formulario
-    const inputUnits = parseFloat(document.getElementById('inboundAnimalUnitsQty').value) || 0;
-    const initialWeight = parseFloat(document.getElementById('inboundAnimalWeightQty').value) || 0;
-
+    const unitsInput = document.getElementById('inboundAnimalUnitsQty');
+    let inputUnits = parseFloat(unitsInput.value) || 0;
+    const weightInput = document.getElementById('inboundAnimalWeightQty');
+    let initialWeight = parseFloat(weightInput.value) || 0;
+    
     // Datos base para proyecciones visuales (opcional)
-    const stockUnits = parseFloat(selected.dataset.currentUnits ?? selected.dataset.unit) || 0;
-    const stockWeight = parseFloat(selected.dataset.currentWeight ?? selected.dataset.weight) || 0;
+    const stockUnits = parseFloat(selected.dataset.unit) || 0;
+    const stockWeight = parseFloat(selected.dataset.weight) || 0;
+
+    // Lógica de bloqueo para unidades y peso
+    if (inputUnits > stockUnits) {
+        unitsInput.value = stockUnits;
+        inputUnits = stockUnits;
+    }
+    if (initialWeight > stockWeight) {
+        weightInput.value = stockWeight;
+        initialWeight = stockWeight;
+    }
 
     const form = document.getElementById('formInboundAnimal');
     const isEdit = form.dataset.mode === 'edit';
@@ -2565,13 +2726,16 @@ function calculateAnimalOutboundTotals() {
     if (weightEl) weightEl.style.color = projWeight < 0 ? '#d63031' : '#2d3436';
 
     const fieldValues = {};
-    // Valor base del formulario (Salida)
-    fieldValues['Peso Inicial'] = parseFloat(document.getElementById('outboundAnimalWeightQty').value) || 0;
-    fieldValues['Peso Inicial (Ingreso)'] = parseFloat(form.dataset.inboundInitialWeight) || 0;
-
     // Cargar datos que venían del ingreso original para cálculos de rendimiento/porcentaje
     const inboundData = JSON.parse(form.dataset.inboundDynamicData || '{}');
-    Object.assign(fieldValues, inboundData);
+    for (const [key, value] of Object.entries(inboundData)) {
+        fieldValues[`${key} (ingreso)`] = value;
+    }
+
+    // Valores base del formulario actual (Salida)
+    fieldValues['Peso Inicial'] = parseFloat(document.getElementById('outboundAnimalWeightQty').value) || 0;
+    // Añadir el peso inicial del ingreso con su identificador de origen
+    fieldValues['Peso Inicial (ingreso)'] = parseFloat(form.dataset.inboundInitialWeight) || 0;
 
     document.querySelectorAll('#dynamicProductionFieldsOut .dynamic-prod-field').forEach(input => {
         if (!input.classList.contains('result-field')) {
@@ -2607,10 +2771,11 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
     const form = e.target;
     const isEdit = form.dataset.mode === 'edit';
     
+    const select = document.getElementById('inboundAnimalProduct');
     const productName = document.getElementById('inboundAnimalProduct').value;
     const units = parseFloat(document.getElementById('inboundAnimalUnitsQty').value) || 0;
     const initialWeight = parseFloat(document.getElementById('inboundAnimalWeightQty').value) || 0;
-    const productCode = document.getElementById('inboundAnimalProduct').options[document.getElementById('inboundAnimalProduct').selectedIndex].dataset.code;
+    const productCode = document.getElementById('inboundAnimalProduct').options[document.getElementById('inboundAnimalProduct').selectedIndex].dataset.baseCode;
 
     // Recopilar datos dinámicos estructurados para la columna JSONB
     let productionData = {}; // Objeto para la columna JSONB
@@ -2631,6 +2796,21 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
             productionData[`Bultos: ${bultosInput.dataset.label}`] = bultosValue;
         }
     });
+    // Incluir precios dinámicos por campo de tipo 'sum'
+    document.querySelectorAll('#dynamicProductionFields .price-dynamic-input').forEach(priceInput => {
+        const priceValue = parseInt(priceInput.value.replace(/\D/g, '')) || 0;
+        if (priceValue > 0) {
+            productionData[`Precio: ${priceInput.dataset.label}`] = priceValue;
+        }
+    });
+    // FASE 13: Incluir precios por KG
+    document.querySelectorAll('#dynamicProductionFields .price-kg-dynamic-input').forEach(priceInput => {
+        const priceValue = parseInt(priceInput.value.replace(/\D/g, '')) || 0;
+        if (priceValue > 0) {
+            // Guardar en un formato que podamos identificar, ej: "Precio KG: Chocolate"
+            productionData[`Precio KG: ${priceInput.dataset.label}`] = priceValue;
+        }
+    });
 
     // Filtrar solo los campos que en animal_config tengan operation = 'sum' para el inventario
     const { data: sumFields } = await _supabase
@@ -2642,6 +2822,10 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
 
     const sumLabels = new Set((sumFields || []).map(f => f.field_label));
 
+    // Generar todos los códigos de inventario necesarios de una sola vez
+    const subProductsToCreate = Object.keys(productionData).filter(label => sumLabels.has(label));
+    const inventoryCodes = await generateNextInventoryCode(subProductsToCreate.length);
+
     const modalManage = document.getElementById('modalManageShedAnimals');
     const farm = modalManage.dataset.farm;
     const shedNumber = modalManage.dataset.number;
@@ -2651,16 +2835,14 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
     // --- LÓGICA DE NUEVAS TABLAS ---
 
     // 1. Buscar o crear el lote de animales
-    let { data: batch, error: batchError } = await _supabase
-        .from('animal_batches')
-        .select('id')
-        .eq('animal_code', productCode)
-        .eq('farm_name', farm)
-        .eq('shed_number', shedNumber)
-        .eq('status', 'active')
-        .maybeSingle();
-
-    if (batchError) return showToast("Error buscando lote: " + batchError.message, "error");
+    let batch = null;
+    if (isEdit) {
+        batch = { id: form.dataset.batchId };
+    } else {
+        const { data, error } = await _supabase.from('animal_batches').select('id').eq('animal_code', productCode).eq('farm_name', farm).eq('shed_number', shedNumber).eq('status', 'active').maybeSingle();
+        if (error) return showToast("Error buscando lote: " + error.message, "error");
+        batch = data;
+    }
 
     if (!batch) {
         const { data: newBatch, error: newBatchError } = await _supabase
@@ -2679,7 +2861,25 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
         batch = newBatch;
     }
 
+    // Si después de todo, no hay lote, detenemos la ejecución.
+    if (!batch || !batch.id) {
+        return showToast("No se pudo determinar el lote de animales para el registro.", "error");
+    }
     // 2. Crear el registro de producción
+    // Separar precios dinámicos de los datos de producción
+    let priceDynamic = {};
+    Object.entries(productionData).forEach(([key, value]) => {
+        if (key.startsWith('Precio: ')) {
+            const fieldName = key.replace('Precio: ', '');
+            priceDynamic[fieldName] = value;
+        }
+        // FASE 13: Añadir precios por KG al objeto price_dynamic
+        if (key.startsWith('Precio KG: ')) {
+            const fieldName = key.replace('Precio KG: ', '');
+            priceDynamic[`${fieldName}_KG`] = value; // ej: Chocolate_KG
+        }
+    });
+
     const { data: recordData, error: recordError } = await _supabase
         .from('animal_production_records')
         .insert({
@@ -2687,7 +2887,8 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
             event_type: 'ingreso',
             units: units,
             initial_weight: initialWeight,
-            dynamic_data: productionData
+            dynamic_data: productionData,
+            price_dynamic: Object.keys(priceDynamic).length > 0 ? priceDynamic : null
         })
         .select('id')
         .single();
@@ -2699,37 +2900,85 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
     const invOps = Object.entries(productionData)
         .filter(([label, value]) => {
             const num = parseFloat(value);
-            return sumLabels.has(label) && !isNaN(num) && num !== 0;
+            return sumLabels.has(label) && !isNaN(num);
         })
         .map(async ([label, value]) => {
             const numValue = parseFloat(value);
+            const priceKey = `Precio: ${label}`;
+            const pricePerBulto = productionData[priceKey] ? parseInt(productionData[priceKey]) : 0;
+            const pricePerKg = productionData[`Precio KG: ${label}`] ? parseInt(productionData[`Precio KG: ${label}`]) : 0;
+            const bultos = parseInt(productionData[`Bultos: ${label}`] || 0);
+
+            // Construir el objeto de precios para la columna sale_price
+            const salePriceObject = {};
+            if (pricePerBulto > 0) salePriceObject['Bulto'] = pricePerBulto;
+            if (pricePerKg > 0) salePriceObject['KG'] = pricePerKg;
+
+            // Crear o actualizar producto de producción en tabla products
+            let prodCode = (await generateNextInventoryCode())[0];
+            const { data: existingProd, error: existingError } = await _supabase
+                .from('products')
+                .select('base_code, sale_price')
+                .eq('name', label).eq('inventory', false) // Buscar en productos base
+                .maybeSingle();
+            
+            if (existingProd) { // Si ya existe una definición, la usamos
+                prodCode = existingProd.base_code;
+                // Si hay precios nuevos, actualizar el JSONB
+                if (Object.keys(salePriceObject).length > 0) {
+                    await _supabase.from('products')
+                        .update({ sale_price: salePriceObject })
+                        .eq('base_code', existingProd.base_code);
+                }
+            } else { // Si no existe, creamos una nueva definición de producto
+                await _supabase.from('products').insert({
+                    base_code: prodCode,
+                    name: label,
+                    unit: 0,
+                    medit: ['Bulto', 'KG'], // Medidas para subproductos
+                    weigth: { 'Bulto': 0, 'KG': 0 }, // Inicializar weigth
+                    sale_price: salePriceObject,
+                    buy_price: null, // No aplica precio de compra
+                    total: 0,
+                    animal: false,
+                    to_sale: true, // Para venta por defecto
+                    inventory: false // Es una definición
+                });
+            }
+            
             const { data: existingFieldInv, error: existingFieldError } = await _supabase
-                .from('inventory')
-                .select('id, amount')
-                .eq('product', label)
+                .from('products')
+                .select('id, unit')
+                .eq('name', label)
                 .eq('farm', farm)
-                .eq('shed', String(shedNumber))
+                .eq('inventory', true)
                 .maybeSingle();
 
             if (existingFieldError) {
                 console.error(`Error consultando inventario animal para campo ${label}:`, existingFieldError.message);
             } else if (!existingFieldInv) {
-                const code = await generateNextInventoryCode();
-                const { error: invInsertError } = await _supabase.from('inventory').insert({
-                    code: code,
-                    product: label,
-                    shed: String(shedNumber),
-                    amount: numValue,
+                const invCode = inventoryCodes.shift(); // Tomar el siguiente código secuencial
+                if (!invCode) return; // Seguridad por si algo falla
+
+                const { error: invInsertError } = await _supabase.from('products').insert({
+                    base_code: prodCode,
+                    inventory_code: invCode,
+                    name: label,
+                    unit: bultos, // La unidad principal son los bultos
+                    weigth: { 'Bulto': bultos, 'KG': numValue }, // JSON con ambas medidas
+                    sale_price: salePriceObject, // Guardar el objeto de precios en el item de inventario
                     farm: farm,
                     provider: [],
-                    medit: 'KG',
+                    medit: ['Bulto', 'KG'],
+                    inventory: true,
                     created_at: getColombiaTimestamp()
                 });
                 if (invInsertError) console.error(`Error creando inventario animal para campo ${label}:`, invInsertError.message);
             } else {
-                const newAmount = (existingFieldInv.amount || 0) + numValue;
-                const { error: invUpdateError } = await _supabase.from('inventory')
-                    .update({ amount: newAmount })
+                const newAmount = (existingFieldInv.unit || 0) + bultos;
+                const newWeight = (existingFieldInv.weigth?.KG || 0) + numValue;
+                const { error: invUpdateError } = await _supabase.from('products')
+                    .update({ unit: newAmount, weigth: { ...existingFieldInv.weigth, 'Bulto': newAmount, 'KG': newWeight }, sale_price: salePriceObject })
                     .eq('id', existingFieldInv.id);
                 if (invUpdateError) console.error(`Error actualizando inventario animal para campo ${label}:`, invUpdateError.message);
             }
@@ -2737,6 +2986,30 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
 
     await Promise.all(invOps);
 
+    // --- Actualizar stock del animal base ---
+    const { data: baseAnimal, error: baseAnimalError } = await _supabase
+        .from('products')
+        .select('unit, weigth')
+        .eq('base_code', productCode)
+        .eq('inventory', false)
+        .single();
+
+    if (!baseAnimalError && baseAnimal) {
+        const newUnits = (baseAnimal.unit || 0) - units;
+        const newWeightKG = (baseAnimal.weigth?.KG || 0) - initialWeight;
+        
+        // Construir el nuevo objeto weigth preservando los datos existentes
+        const newWeigthObject = {
+            ...(baseAnimal.weigth || {}), // Copiar datos existentes (ej: Bultos)
+            'KG': Math.max(0, newWeightKG) // Actualizar solo el valor de KG
+        };
+
+        await _supabase
+            .from('products')
+            .update({ unit: Math.max(0, newUnits), weigth: newWeigthObject })
+            .eq('base_code', productCode)
+            .eq('inventory', false);
+    }
     // Crear movimiento general del ingreso de animal
     const { data: mvData, error: mvError } = await _supabase.from('movements').insert([{
         name: productName,
@@ -2781,24 +3054,9 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
 
     await Promise.all(moveOps);
 
-    // Asociar movement_id al primer registro de tipo ingreso de este lote (si existe)
-    if (mvData && mvData.id && batch && batch.id) {
-        const { data: firstRec, error: firstErr } = await _supabase
-            .from('animal_production_records')
-            .select('id')
-            .eq('batch_id', batch.id)
-            .eq('event_type', 'ingreso')
-            .order('created_at', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-        if (firstRec && firstRec.id) {
-            await _supabase.from('animal_production_records').update({ movement_id: mvData.id }).eq('id', firstRec.id);
-        }
-    }
-
     showToast(isEdit ? "Registro actualizado" : "Animales ingresados al galpón correctamente");
     closeModals();
-    if (window.CURRENT_INVENTORY_MODE === 'sheds') loadFilteredInventory('sheds');
+    if (window.CURRENT_VIEW_MODE === 'sheds') renderInventoryView('sheds');
 });
 
 // Ingeniería de Backend: Procesamiento de la Salida de Animales del Galpón
@@ -2807,7 +3065,7 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
     const form = e.target;
 
     const productName = document.getElementById('outboundAnimalProduct').value;
-    const productCode = document.getElementById('outboundAnimalProduct').options[document.getElementById('outboundAnimalProduct').selectedIndex].dataset.code;
+    const productCode = document.getElementById('outboundAnimalProduct').options[document.getElementById('outboundAnimalProduct').selectedIndex].dataset.baseCode;
     const units = parseFloat(document.getElementById('outboundAnimalUnitsQty').value) || 0;
     const baseWeight = parseFloat(document.getElementById('outboundAnimalWeightQty').value) || 0;
     const batchId = form.dataset.batchId;
@@ -2829,6 +3087,21 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
             productionData[`Bultos: ${bultosInput.dataset.label}`] = bultosValue;
         }
     });
+    // Incluir precios dinámicos por campo de tipo 'sum'
+    document.querySelectorAll('#dynamicProductionFieldsOut .price-dynamic-input').forEach(priceInput => {
+        const priceValue = parseInt(priceInput.value.replace(/\D/g, '')) || 0;
+        if (priceValue > 0) {
+            productionData[`Precio: ${priceInput.dataset.label}`] = priceValue;
+        }
+    });
+    // FASE 13: Incluir precios por KG en salida
+    document.querySelectorAll('#dynamicProductionFieldsOut .price-kg-dynamic-input').forEach(priceInput => {
+        const priceValue = parseInt(priceInput.value.replace(/\D/g, '')) || 0;
+        if (priceValue > 0) {
+            productionData[`Precio KG: ${priceInput.dataset.label}`] = priceValue;
+        }
+    });
+
 
     // Filtrar solo los campos que en animal_config tengan operation = 'sum' para el inventario
     const { data: sumFieldsOut } = await _supabase
@@ -2872,12 +3145,27 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
     }
 
     // 2. Crear el registro de producción de salida
+    // Separar precios dinámicos de los datos de producción
+    let priceDynamicOut = {};
+    Object.entries(productionData).forEach(([key, value]) => {
+        if (key.startsWith('Precio: ')) {
+            const fieldName = key.replace('Precio: ', '');
+            priceDynamicOut[fieldName] = value;
+        }
+        // FASE 13: Añadir precios por KG al objeto price_dynamic en salida
+        if (key.startsWith('Precio KG: ')) {
+            const fieldName = key.replace('Precio KG: ', '');
+            priceDynamicOut[`${fieldName}_KG`] = value;
+        }
+    });
+
     const { data: outRec, error: outRecErr } = await _supabase.from('animal_production_records').insert({
         batch_id: batch.id,
         event_type: 'salida',
         units: units,
         initial_weight: baseWeight,
-        dynamic_data: productionData
+        dynamic_data: productionData,
+        price_dynamic: Object.keys(priceDynamicOut).length > 0 ? priceDynamicOut : null
     }).select('id').single();
 
     if (outRecErr) return showToast("Error guardando registro de salida: " + outRecErr.message, "error");
@@ -2891,12 +3179,27 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
         })
         .map(async ([label, value]) => {
             const numValue = parseFloat(value);
+            const priceKey = `Precio: ${label}`;
+            const pricePerBulto = productionData[priceKey] ? parseInt(productionData[priceKey]) : 0;
+            const pricePerKg = productionData[`Precio KG: ${label}`] ? parseInt(productionData[`Precio KG: ${label}`]) : 0;
+
+            const salePriceObject = {};
+            if (pricePerBulto > 0) salePriceObject['Bulto'] = pricePerBulto;
+            if (pricePerKg > 0) salePriceObject['KG'] = pricePerKg;
+            
+            // Actualizar precio del producto de producción
+            if (Object.keys(salePriceObject).length > 0) {
+                await _supabase.from('products')
+                    .update({ sale_price: salePriceObject })
+                    .eq('name', label);
+            }
+            
             const { data: existingFieldInv, error: existingFieldError } = await _supabase
-                .from('inventory')
-                .select('id, amount')
-                .eq('product', label)
+                .from('products')
+                .select('id, unit')
+                .eq('name', label)
                 .eq('farm', farm)
-                .eq('shed', String(shedNumber))
+                .eq('inventory', true)
                 .maybeSingle();
 
             if (existingFieldError) {
@@ -2904,9 +3207,9 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
             } else if (!existingFieldInv) {
                 console.warn(`No existe inventario del campo ${label} en este galpón para registrar la salida.`);
             } else {
-                const newAmount = (existingFieldInv.amount || 0) - numValue;
-                const { error: invUpdateError } = await _supabase.from('inventory')
-                    .update({ amount: newAmount })
+                const newAmount = (existingFieldInv.unit || 0) - numValue;
+                const { error: invUpdateError } = await _supabase.from('products')
+                    .update({ unit: newAmount })
                     .eq('id', existingFieldInv.id);
                 if (invUpdateError) console.error(`Error actualizando inventario animal para campo ${label}:`, invUpdateError.message);
             }
@@ -2975,20 +3278,6 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
 
     await Promise.all(moveOpsOut);
 
-    if (mvOut && mvOut.id) {
-        const { data: firstOut, error: firstOutErr } = await _supabase
-            .from('animal_production_records')
-            .select('id')
-            .eq('batch_id', batch.id)
-            .eq('event_type', 'salida')
-            .order('created_at', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-        if (firstOut && firstOut.id) {
-            await _supabase.from('animal_production_records').update({ movement_id: mvOut.id }).eq('id', firstOut.id);
-        }
-    }
-
     // 4. Verificar si el lote debe cerrarse
     const { data: records, error: recordsError } = await _supabase.from('animal_production_records').select('event_type, units').eq('batch_id', batch.id);
     if (!recordsError) {
@@ -3004,7 +3293,7 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
 
     showToast("Salida de animales registrada correctamente");
     closeModals();
-    if (window.CURRENT_INVENTORY_MODE === 'sheds') loadFilteredInventory('sheds');
+    if (window.CURRENT_VIEW_MODE === 'sheds') renderInventoryView('sheds');
 });
 
 // Ingeniería de Sistemas: Helper para actualizar la proyección de stock global en tiempo real
@@ -3046,7 +3335,6 @@ function setupEditInventoryListeners() {
     prodSelect?.addEventListener('change', async function() {
         const selected = this.options[this.selectedIndex];
         if (!selected.value) return;
-        document.getElementById('editInvCategorySpan').textContent = "N/A"; // Ya no hay categoría
         document.getElementById('editInvGlobalStock').textContent = formatNumber(selected.getAttribute('data-global')) || '0';
         document.getElementById('editInvUnitInput').value = selected.getAttribute('data-medit');
         document.getElementById('editInvShedContainer').classList.add('hidden'); // Shed is not part of product inventory editing
@@ -3066,9 +3354,9 @@ function setupEditInventoryListeners() {
 }
 
 window.editInventoryItem = async (idOrProduct) => {
-    let query = _supabase.from('inventory').select('*');
+    let query = _supabase.from('products').select('*').eq('inventory', true);
     if (!isNaN(idOrProduct) && !String(idOrProduct).includes(':')) query = query.eq('id', idOrProduct);
-    else query = query.eq('product', idOrProduct);
+    else query = query.eq('name', idOrProduct);
 
     const { data: inv, error } = await query.single();
     if (error || !inv) return showToast("Error al cargar datos", "error");
@@ -3076,8 +3364,8 @@ window.editInventoryItem = async (idOrProduct) => {
     const form = document.getElementById('formEditInventory');
     form.dataset.mode = 'edit';
     form.dataset.id = inv.id;
-    form.dataset.oldAmount = inv.amount;
-    form.dataset.oldProduct = inv.product;
+    form.dataset.oldAmount = inv.unit;
+    form.dataset.oldProduct = inv.name;
     form.dataset.oldFarm = inv.farm;
     form.dataset.oldShed = ""; // Shed is no longer relevant for product inventory
     form.dataset.currentProv = Array.isArray(inv.provider) ? inv.provider[0] : inv.provider;
@@ -3087,14 +3375,14 @@ window.editInventoryItem = async (idOrProduct) => {
     const { data: prods } = await _supabase.from('products').select('name, medit, code, unit').order('name'); // Ya no se selecciona 'categorie'
     const prodSelect = document.getElementById('editInvProductSelect');
     prodSelect.innerHTML = prods.map(p => `<option value="${p.name}" data-medit="${p.medit}" data-code="${p.code}" data-global="${p.unit}">${p.name}</option>`).join(''); // Ya no se usa data-cat
-    prodSelect.value = inv.product;
+    prodSelect.value = inv.name;
 
     const { data: farms } = await _supabase.from('farms').select('name').order('name');
     const farmSelect = document.getElementById('editInvFarmSelect');
     farmSelect.innerHTML = farms.map(f => `<option value="${f.name}">${f.name}</option>`).join('');
     farmSelect.value = inv.farm;
 
-    document.getElementById('editInvAmountInput').value = inv.amount;
+    document.getElementById('editInvAmountInput').value = inv.unit;
 
     // Disparar eventos para poblar campos secundarios y calcular proyección inicial
     prodSelect.dispatchEvent(new Event('change'));
@@ -3133,28 +3421,450 @@ document.getElementById('formEditInventory')?.addEventListener('submit', async (
         await _supabase.from('products').update({ unit: (pNew?.unit || 0) - newAmount }).eq('name', newProduct);
     }
 
-    const { error } = await _supabase.from('inventory').update({ // Update inventory item
-        code: prodOpt.dataset.code, product: newProduct, farm: newFarm, shed: null, // Mantener shed como null para productos
-        amount: newAmount, provider: newProvider ? [newProvider] : [], medit: prodOpt.dataset.medit // Mantener medit
+    const { error } = await _supabase.from('products').update({ // Update inventory item
+        base_code: prodOpt.dataset.code, name: newProduct, farm: newFarm,
+        unit: newAmount, provider: newProvider ? [newProvider] : [], medit: prodOpt.dataset.medit
     }).eq('id', id);
 
     if (error) showToast("Error: " + error.message, "error");
     else { showToast("Registro actualizado y sincronizado"); closeModals(); loadFilteredInventory(window.CURRENT_INVENTORY_MODE); }
-});
+}); 
 
 window.deleteInventoryItem = async (idOrProduct) => {
     if (!confirm("¿Desea eliminar este registro del inventario?")) return;
     
     // Ingeniería de Sistemas: Manejo polimórfico de eliminación para evitar errores de tipo en DB
-    let query = _supabase.from('inventory').delete();
+    let query = _supabase.from('products').delete().eq('inventory', true);
     
     if (!isNaN(idOrProduct) && !String(idOrProduct).includes(':')) {
         query = query.eq('id', idOrProduct);
     } else {
-        query = query.eq('product', idOrProduct);
+        query = query.eq('name', idOrProduct);
     }
 
     const { error } = await query;
     if (error) showToast("Error: " + error.message, "error");
-    else { showToast("Registro eliminado"); loadFilteredInventory(window.CURRENT_INVENTORY_MODE); }
+    else { showToast("Registro eliminado"); loadFilteredInventory(window.CURRENT_VIEW_MODE); }
+};
+
+window.editInventoryItem = async (inventoryId) => {
+    const { data: inv, error } = await _supabase.from('products').select('*').eq('id', inventoryId).single();
+    if (error || !inv) return showToast("Error al cargar datos del inventario", "error");
+
+    const form = document.getElementById('formEditInventory');
+    form.dataset.mode = 'edit';
+    form.dataset.id = inv.id;
+    form.dataset.oldAmount = inv.unit;
+    form.dataset.oldProduct = inv.name;
+    form.dataset.oldFarm = inv.farm;
+    form.dataset.currentProv = Array.isArray(inv.provider) ? inv.provider[0] : inv.provider;
+
+    // Cargar selectores
+    const { data: prods } = await _supabase.from('products').select('name, medit, base_code, unit').eq('inventory', false).order('name');
+    const prodSelect = document.getElementById('editInvProductSelect');
+    prodSelect.innerHTML = prods.map(p => `<option value="${p.name}" data-medit="${p.medit}" data-code="${p.base_code}" data-global="${p.unit}">${p.name}</option>`).join('');
+    prodSelect.value = inv.name;
+
+    const { data: farms } = await _supabase.from('farms').select('name').order('name');
+    const farmSelect = document.getElementById('editInvFarmSelect');
+    farmSelect.innerHTML = farms.map(f => `<option value="${f.name}">${f.name}</option>`).join('');
+    farmSelect.value = inv.farm;
+
+    document.getElementById('editInvAmountInput').value = inv.unit;
+
+    // Disparar eventos para poblar campos secundarios y calcular proyección inicial
+    prodSelect.dispatchEvent(new Event('change'));
+
+    showModal('modalEditInventory');
+};
+
+document.getElementById('formEditInventory')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const id = form.dataset.id;
+    const oldAmount = parseFloat(form.dataset.oldAmount);
+    const oldProduct = form.dataset.oldProduct;
+
+    const newProductName = document.getElementById('editInvProductSelect').value;
+    const newFarm = document.getElementById('editInvFarmSelect').value;
+    const newAmount = parseFloat(document.getElementById('editInvAmountInput').value);
+    const newProvider = document.getElementById('editInvProviderSelect').value;
+    const prodOpt = document.getElementById('editInvProductSelect').options[document.getElementById('editInvProductSelect').selectedIndex];
+
+    // Actualizar el registro de inventario
+    const { error } = await _supabase.from('products').update({
+        name: newProductName,
+        farm: newFarm,
+        unit: newAmount,
+        provider: newProvider ? [newProvider] : [],
+        medit: prodOpt.dataset.medit
+    }).eq('id', id);
+
+    if (error) showToast("Error al actualizar: " + error.message, "error");
+    else { 
+        showToast("Registro de inventario actualizado"); 
+        closeModals(); 
+        loadFilteredInventory('products'); 
+    }
+});
+
+window.deleteProduct = async (base_code) => {
+    if (!confirm(`¿Está seguro de eliminar la definición del producto con código ${base_code}?`)) return;
+    const { error } = await _supabase.from('products').delete().eq('base_code', base_code);
+    if (error) {
+        showToast("Error al eliminar producto: " + error.message, "error");
+    } else {
+        showToast("Definición de producto eliminada.");
+        renderBaseProducts(); // Refrescar la lista de productos base
+    }
+};
+
+// ==========================================================
+// SECCIÓN DE ESTADÍSTICAS DE PRODUCCIÓN
+// ==========================================================
+
+async function prepareStatsModal() {
+    const modalManage = document.getElementById('modalManageShedAnimals');
+    const animalName = modalManage.querySelector('#shedAnimalLabel span')?.textContent || '';
+
+    if (!animalName) {
+        showToast("No se ha determinado un animal para configurar estadísticas.", "error");
+        return;
+    }
+
+    document.getElementById('statsTitle').textContent = `Parámetros de Producción: ${animalName}`;
+    document.getElementById('formConfigStat').dataset.animalName = animalName;
+
+    // Cargar campos disponibles para los selectores
+    const { data: fields } = await _supabase.from('animal_config').select('field_label, form_type').eq('animal_name', animalName);
+    
+    // Cargar también las estadísticas existentes para poder anidarlas
+    const { data: existingStats } = await _supabase.from('animal_statistics_config').select('statistic_name').eq('animal_name', animalName);
+
+
+    const allFields = [
+        { field_label: 'Peso Inicial', form_type: 'ingreso' },
+        { field_label: 'Peso Inicial', form_type: 'salida' },
+        ...(fields || [])
+    ];
+
+    const optionsHtml = allFields.map(f => {
+        const value = `${f.field_label} (${f.form_type})`;
+        return `<option value="${value}">${value}</option>`;
+    }).join('');
+
+    const statsOptionsHtml = (existingStats || []).map(s => {
+        const value = `${s.statistic_name} (parámetro)`;
+        return `<option value="${value}" data-is-stat="true" style="color:#6c5ce7; font-weight:bold;">${value}</option>`;
+    }).join('');
+
+    const op2Select = document.getElementById('statOperand2Field');
+
+    const finalOptions = optionsHtml + statsOptionsHtml;
+    document.getElementById('statOperand1Field').innerHTML = `<option value="" disabled selected>Seleccione...</option>${finalOptions}`;
+    op2Select.innerHTML = `<option value="" disabled selected>Seleccione...</option><option value="manual_input" style="font-weight:bold; color:#e67e22;">Valor Manual</option>${finalOptions}`;
+
+    // Cargar y mostrar estadísticas ya guardadas
+    await renderSavedStats(animalName);
+}
+
+async function renderSavedStats(animalName) {
+    const container = document.getElementById('statsListContainer');
+    container.innerHTML = "<p style='font-size:12px; text-align:center; color:#b2bec3;'>Cargando parámetros guardados...</p>";
+
+    const { data, error } = await _supabase.from('animal_statistics_config').select('*').eq('animal_name', animalName);
+
+    if (error) {
+        container.innerHTML = `<p class="error-msg">Error al cargar parámetros.</p>`;
+        return;
+    }
+
+    if (!data || data.length === 0) {
+        container.innerHTML = "<p style='font-size:12px; text-align:center; color:#b2bec3;'>No hay parámetros guardados para este animal.</p>";
+        return;
+    }
+
+    container.innerHTML = data.map(stat => `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:white; padding:10px 15px; border-radius:6px; border:1px solid #dfe6e9; margin-bottom:8px;">
+            <span style="font-weight:bold; color: #2d3436; font-size: 14px;">${stat.statistic_name}</span>
+            <button class="btn-cancel" style="width:30px; height:30px; padding:0; border-radius:50%;" onclick="deleteStatistic(${stat.id})">×</button>
+        </div>
+    `).join('');
+}
+
+async function saveStatisticConfig() {
+    const form = document.getElementById('formConfigStat');
+    const animalName = form.dataset.animalName;
+    const statName = document.getElementById('statName').value;
+
+    const operand1 = document.getElementById('statOperand1Field').value;
+    const operand2 = document.getElementById('statOperand2Field').value;
+
+    // Extraer campo, origen y si es una estadística
+    const parseOperand = (opString) => {
+        const statMatch = opString.match(/(.+) \(parámetro\)/);
+        if (statMatch) {
+            return { field: statMatch[1].trim(), source: 'statistic', isStat: true };
+        }
+        const fieldMatch = opString.match(/(.+) \((ingreso|salida)\)/);
+        if (fieldMatch) {
+            return { field: fieldMatch[1].trim(), source: fieldMatch[2], isStat: false };
+        }
+        return { field: opString, source: '', isStat: false };
+    };
+
+    const op1_parsed = parseOperand(operand1);
+    let op2_parsed;
+    if (operand2 === 'manual_input') {
+        op2_parsed = { field: 'manual_input', source: 'manual', isStat: false };
+    } else {
+        op2_parsed = parseOperand(operand2);
+        if (op1_parsed.isStat && op2_parsed.isStat && op1_parsed.field === op2_parsed.field) {
+            return showToast("Error: Una estadística no puede depender de sí misma.", "error");
+        }
+    }
+
+    const statData = {
+        statistic_name: statName,
+        animal_name: animalName,
+        operand1_field: op1_parsed.field,
+        operand1_source: op1_parsed.source,
+        operand1_is_stat: op1_parsed.isStat,
+        operation: document.getElementById('statOperation').value,
+        operand2_field: op2_parsed.field,
+        operand2_source: op2_parsed.source,
+        operand2_is_stat: op2_parsed.isStat,
+        display_format: document.getElementById('statOperation').value === 'div' ? 'percent' : 'number'
+    };
+
+    const { error } = await _supabase.from('animal_statistics_config').insert([statData]);
+
+    if (error) return showToast("Error al guardar: " + error.message, "error");
+    
+    showToast("Parámetro guardado exitosamente.");
+    form.reset();
+    document.getElementById('statOperand2Field').value = "";
+    await prepareStatsModal(); // Recargar todo el modal para que la nueva stat aparezca en los selects
+}
+
+window.deleteStatistic = async (id) => {
+    if (!confirm("¿Está seguro de eliminar este parámetro?")) return;
+    const { error } = await _supabase.from('animal_statistics_config').delete().eq('id', id);
+    if (error) return showToast("Error al eliminar: " + error.message, "error");
+    
+    const animalName = document.getElementById('formConfigStat').dataset.animalName;
+    await prepareStatsModal(); // Recargar todo el modal
+};
+
+// Variables globales para la simulación de estadísticas
+let lastStatConfigs = [];
+let lastStatRecords = [];
+
+window.calculateAndRenderStatistics = async () => {
+    const modal = document.getElementById('modalManageShedAnimals');
+    const farm = modal.dataset.farm;
+    const shed = modal.dataset.number;
+    const animalName = modal.querySelector('#shedAnimalLabel span')?.textContent;
+    const container = document.getElementById('statsResultContainer');
+
+    const dateStart = document.getElementById('statsDateStart').value;
+    const dateEnd = document.getElementById('statsDateEnd').value;
+
+    if (!dateStart || !dateEnd) {
+        return showToast("Debe seleccionar una fecha de inicio y fin.", "error");
+    }
+
+    container.innerHTML = `<p style="text-align:center; color: #b2bec3;">Calculando resultados...</p>`;
+
+    // 1. Obtener las configuraciones de estadísticas para este animal
+    const { data: configs, error: configError } = await _supabase.from('animal_statistics_config').select('*, id').eq('animal_name', animalName);
+    if (configError) return container.innerHTML = `<p class="error-msg">Error al cargar configuraciones.</p>`;
+    if (!configs || configs.length === 0) return container.innerHTML = `<p style="text-align:center; color: #b2bec3;">No hay parámetros configurados para este animal.</p>`;
+    
+    lastStatConfigs = configs; // Guardar para recálculo
+    
+    // 2. Obtener los lotes activos para este galpón
+    const { data: batches } = await _supabase.from('animal_batches').select('id').eq('farm_name', farm).eq('shed_number', shed);
+    const batchIds = (batches || []).map(b => b.id);
+    if (batchIds.length === 0) return container.innerHTML = `<p style="text-align:center; color: #b2bec3;">No hay lotes en este galpón.</p>`;
+
+    // 3. Obtener todos los registros de producción para esos lotes en el rango de fechas
+    const { data: records, error: recordsError } = await _supabase
+        .from('animal_production_records')
+        .select('event_type, dynamic_data, initial_weight, created_at')
+        .in('batch_id', batchIds)
+        .gte('created_at', `${dateStart}T00:00:00`)
+        .lte('created_at', `${dateEnd}T23:59:59`);
+    
+    if (recordsError) return container.innerHTML = `<p class="error-msg">Error al cargar registros de producción.</p>`;
+    
+    lastStatRecords = records; // Guardar para recálculo
+
+    // 4. Calcular estadísticas con resolución de dependencias
+    const calculatedResults = new Map();
+    let unresolvedConfigs = [...configs];
+    let resolvedInThisPass = true;
+
+    while (unresolvedConfigs.length > 0 && resolvedInThisPass) {
+        resolvedInThisPass = false;
+        const stillUnresolved = [];
+
+        for (const config of unresolvedConfigs) {
+            const getOperandValue = (field, source, isStat) => {
+                if (isStat) {
+                    return calculatedResults.has(field) ? { value: calculatedResults.get(field).value, resolved: true } : { resolved: false };
+                }
+                if (source === 'manual') {
+                    return { value: 1, resolved: true }; // Valor inicial por defecto para simulación
+                }
+                // Sumar los valores de todos los registros que coincidan
+                const value = records.reduce((sum, rec) => {
+                    if (rec.event_type === source) {
+                        const val = rec.dynamic_data[field] !== undefined ? rec.dynamic_data[field] : (field === 'Peso Inicial' ? rec.initial_weight : 0);
+                        return sum + (parseFloat(val) || 0);
+                    }
+                    return sum;
+                }, 0);
+                return { value, resolved: true };
+            };
+
+            const op1 = getOperandValue(config.operand1_field, config.operand1_source, config.operand1_is_stat);
+            const op2 = getOperandValue(config.operand2_field, config.operand2_source, config.operand2_is_stat);
+
+            if (op1.resolved && op2.resolved) {
+                const val1 = op1.value;
+                const val2 = op2.value;
+                let result = 0;
+                switch (config.operation) {
+                    case 'sum': result = val1 + val2; break;
+                    case 'sub': result = val1 - val2; break; // CORREGIDO: val1 - val2
+                    case 'div': result = val2 !== 0 ? val1 / val2 : 0; break;
+                }
+                calculatedResults.set(config.statistic_name, { id: config.id, value: result, format: config.display_format });
+                resolvedInThisPass = true;
+            } else {
+                stillUnresolved.push(config);
+            }
+        }
+        unresolvedConfigs = stillUnresolved;
+    }
+
+    if (unresolvedConfigs.length > 0) {
+        console.error("Circular dependency or unresolved stats:", unresolvedConfigs.map(c => c.statistic_name));
+        container.innerHTML = `<p class="error-msg">Error: Se detectó una dependencia circular en los parámetros.</p>`;
+        return;
+    }
+
+    // 5. Renderizar los resultados
+    if (calculatedResults.size === 0) {
+        container.innerHTML = `<p style="text-align:center; color: #b2bec3;">No se encontraron datos en el período seleccionado para calcular los parámetros.</p>`;
+        return;
+    }
+
+    container.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">
+            ${Array.from(calculatedResults.entries()).map(([name, res]) => {
+                const config = lastStatConfigs.find(c => c.id === res.id);
+                const isManual = config.operand2_source === 'manual';
+
+                let displayValue;
+                if (res.format === 'percent') {
+                    displayValue = `${(res.value * 100).toFixed(2)} %`;
+                } else {
+                    displayValue = formatNumber(Number(res.value).toFixed(2));
+                }
+
+                return `
+                <div id="stat-card-${res.id}" style="background: white; border: 1px solid #dfe6e9; border-radius: 8px; padding: 15px; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
+                    <div style="font-size: 13px; color: #636e72; margin-bottom: 8px; font-weight: bold;">${name}</div>
+                    <div id="stat-value-${res.id}" style="font-size: 22px; color: #00b894; font-weight: 700; margin: 10px 0;">${displayValue}</div>
+                    ${isManual ? `
+                        <div class="input-group" style="margin: 10px 0 0 0;">
+                            <input type="number" 
+                                   id="manual-input-${res.id}"
+                                   oninput="recalculateSingleStat(${res.id}, this.value)"
+                                   placeholder="Simular valor"
+                                   value="1"
+                                   step="any"
+                                   style="text-align: center; font-size: 12px; padding: 5px; border: 1px solid #0984e3; background: #f0f8ff;">
+                        </div>
+                    ` : ''}
+                </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+};
+
+window.recalculateSingleStat = (statId, manualValue) => {
+    // Recalcular TODAS las estadísticas para manejar dependencias en cadena
+    const manualInputs = new Map();
+    // Recopilar todos los valores manuales actuales de la UI
+    lastStatConfigs.forEach(config => {
+        if (config.operand2_source === 'manual') {
+            const inputEl = document.getElementById(`manual-input-${config.id}`);
+            manualInputs.set(config.statistic_name, parseFloat(inputEl?.value) || 0);
+        }
+    });
+    // Sobrescribir el valor que acaba de cambiar
+    const changedConfig = lastStatConfigs.find(c => c.id === statId);
+    if (changedConfig) {
+        manualInputs.set(changedConfig.statistic_name, parseFloat(manualValue) || 0);
+    }
+
+    const calculatedResults = new Map();
+    let unresolvedConfigs = [...lastStatConfigs];
+    let resolvedInThisPass = true;
+
+    while (unresolvedConfigs.length > 0 && resolvedInThisPass) {
+        resolvedInThisPass = false;
+        const stillUnresolved = [];
+
+        for (const config of unresolvedConfigs) {
+            const getOperandValue = (field, source, isStat) => {
+                if (isStat) return calculatedResults.has(field) ? { value: calculatedResults.get(field).value, resolved: true } : { resolved: false };
+                if (source === 'manual') return { value: manualInputs.get(config.statistic_name) ?? 1, resolved: true };
+                
+                const value = lastStatRecords.reduce((sum, rec) => {
+                    if (rec.event_type === source) {
+                        const val = rec.dynamic_data[field] !== undefined ? rec.dynamic_data[field] : (field === 'Peso Inicial' ? rec.initial_weight : 0);
+                        return sum + (parseFloat(val) || 0);
+                    }
+                    return sum;
+                }, 0);
+                return { value, resolved: true };
+            };
+
+            const op1 = getOperandValue(config.operand1_field, config.operand1_source, config.operand1_is_stat);
+            const op2 = getOperandValue(config.operand2_field, config.operand2_source, config.operand2_is_stat);
+
+            if (op1.resolved && op2.resolved) {
+                const val1 = op1.value;
+                const val2 = op2.value;
+                let result = 0;
+                switch (config.operation) {
+                    case 'sum': result = val1 + val2; break;
+                    case 'sub': result = val1 - val2; break; // CORREGIDO: val1 - val2
+                    case 'div': result = val2 !== 0 ? val1 / val2 : 0; break;
+                }
+                calculatedResults.set(config.statistic_name, { id: config.id, value: result, format: config.display_format });
+                resolvedInThisPass = true;
+            } else {
+                stillUnresolved.push(config);
+            }
+        }
+        unresolvedConfigs = stillUnresolved;
+    }
+
+    // Actualizar toda la UI con los nuevos valores recalculados
+    calculatedResults.forEach((res, name) => {
+        const valueEl = document.getElementById(`stat-value-${res.id}`);
+        if (valueEl) {
+            if (res.format === 'percent') {
+                valueEl.textContent = `${(res.value * 100).toFixed(2)} %`;
+            } else {
+                valueEl.textContent = formatNumber(Number(res.value).toFixed(2));
+            }
+        }
+    });
 };
