@@ -33,6 +33,16 @@ const formatNumber = (num) => {
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 };
 
+const formatSalePrice = (salePrice) => {
+    if (salePrice === null || salePrice === undefined) return 'No aplica';
+    if (typeof salePrice === 'object' && salePrice !== null) {
+        return Object.entries(salePrice)
+            .map(([key, value]) => `${key}: $ ${formatNumber(value)}`)
+            .join(', ');
+    }
+    return `$ ${formatNumber(salePrice)}`;
+};
+
 const parseInventoryAmount = (amount) => {
     if (amount === null || amount === undefined) return { units: 0, kg: 0 };
     if (typeof amount === 'object') {
@@ -1409,7 +1419,6 @@ function renderProductsTable(products) {
                 .map(([key, value]) => `${formatNumber(value)} ${key}`)
                 .join(', ');
         }
-        // Fallback para productos que no usan el formato JSON
         return `${formatNumber(p.unit)} ${Array.isArray(p.medit) ? p.medit.join(', ') : p.medit}`;
     };
 
@@ -1421,7 +1430,7 @@ function renderProductsTable(products) {
                     <th>Nombre</th>
                     <th>Granja</th>
                     <th>Cantidad</th>
-                    <th style="width: 120px;">Precio Venta</th>
+                    <th style="width: 160px;">Precio Venta</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
@@ -1432,7 +1441,7 @@ function renderProductsTable(products) {
                         <td>${p.name || 'Sin nombre'}</td>
                         <td>${p.farm || 'No aplica'}</td>
                         <td>${formatWeightData(p)}</td>
-                        <td>${p.sale_price === null ? 'No aplica' : `$ ${formatNumber(p.sale_price)}`}</td>
+                        <td>${formatSalePrice(p.sale_price)}</td>
                         <td>
                             <div style="display:flex; gap:5px;">
                             <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editInventoryItem('${p.id}')">Editar</button>
@@ -1463,7 +1472,6 @@ async function renderBaseProducts() {
                 .map(([key, value]) => `${formatNumber(value)} ${key}`)
                 .join(', ');
         }
-        // Fallback para productos que no usan el formato JSON
         return `${formatNumber(p.unit)} ${Array.isArray(p.medit) ? p.medit.join(', ') : p.medit}`;
     };
 
@@ -1481,7 +1489,7 @@ async function renderBaseProducts() {
                         <td>${p.name}</td>
                         <td>${formatWeightData(p)}</td>
                         <td>${p.buy_price === null ? 'No aplica' : `$ ${formatNumber(p.buy_price)}`}</td>
-                        <td>${p.sale_price === null ? 'No aplica' : `$ ${formatNumber(p.sale_price)}`}</td>
+                        <td>${formatSalePrice(p.sale_price)}</td>
                         <td>
                             <div style="display:flex; gap:5px;">
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editProduct('${p.base_code}')">Editar</button>
@@ -1978,7 +1986,14 @@ window.editProduct = async (code) => {
     document.getElementById('prodMedit').value = Array.isArray(data.medit) ? data.medit[0] : data.medit;
     document.getElementById('prodUnit').value = data.unit;
     document.getElementById('prodBuyPrice').value = formatNumber(data.buy_price);
-    document.getElementById('prodSalePrice').value = formatNumber(data.sale_price);
+    
+    const salePriceInput = document.getElementById('prodSalePrice');
+    if (typeof data.sale_price === 'object' && data.sale_price !== null) {
+        const selectedMedit = Array.isArray(data.medit) ? data.medit[0] : data.medit;
+        salePriceInput.value = formatNumber(data.sale_price[selectedMedit] || data.sale_price['KG'] || Object.values(data.sale_price)[0] || 0);
+    } else {
+        salePriceInput.value = formatNumber(data.sale_price);
+    }
 
     // Poblar campos de peso
     const hasWeight = data.weigth !== null;
@@ -2882,7 +2897,7 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
     Object.entries(productionData).forEach(([key, value]) => {
         if (key.startsWith('Precio: ')) {
             const fieldName = key.replace('Precio: ', '');
-            priceDynamic[fieldName] = value;
+            priceDynamic[`${fieldName} bulto`] = value;
         }
         // FASE 13: Añadir precios por KG al objeto price_dynamic
         if (key.startsWith('Precio KG: ')) {
@@ -2959,7 +2974,7 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
             
             const { data: existingFieldInv, error: existingFieldError } = await _supabase
                 .from('products')
-                .select('id, unit')
+                .select('id, unit, weigth')
                 .eq('name', label)
                 .eq('farm', farm)
                 .eq('inventory', true)
@@ -3161,7 +3176,7 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
     Object.entries(productionData).forEach(([key, value]) => {
         if (key.startsWith('Precio: ')) {
             const fieldName = key.replace('Precio: ', '');
-            priceDynamicOut[fieldName] = value;
+            priceDynamicOut[`${fieldName} bulto`] = value;
         }
         // FASE 13: Añadir precios por KG al objeto price_dynamic en salida
         if (key.startsWith('Precio KG: ')) {
@@ -3183,6 +3198,8 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
 
     // --- Actualizar inventario de animales ---
     // Restar de cada registro individual en inventory por cada campo de productionData que tenga operation='sum' en config
+    const isMarinado = document.getElementById('outboundAnimalMarinated')?.checked || false;
+    
     const invOpsOut = Object.entries(productionData)
         .filter(([label, value]) => {
             const num = parseFloat(value);
@@ -3193,6 +3210,8 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
             const priceKey = `Precio: ${label}`;
             const pricePerBulto = productionData[priceKey] ? parseInt(productionData[priceKey]) : 0;
             const pricePerKg = productionData[`Precio KG: ${label}`] ? parseInt(productionData[`Precio KG: ${label}`]) : 0;
+            const bultosKey = `Bultos: ${label}`;
+            const bultos = productionData[bultosKey] ? parseInt(productionData[bultosKey]) : 0;
 
             const salePriceObject = {};
             if (pricePerBulto > 0) salePriceObject['Bulto'] = pricePerBulto;
@@ -3207,7 +3226,7 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
             
             const { data: existingFieldInv, error: existingFieldError } = await _supabase
                 .from('products')
-                .select('id, unit')
+                .select('id, unit, weigth')
                 .eq('name', label)
                 .eq('farm', farm)
                 .eq('inventory', true)
@@ -3218,15 +3237,90 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
             } else if (!existingFieldInv) {
                 console.warn(`No existe inventario del campo ${label} en este galpón para registrar la salida.`);
             } else {
-                const newAmount = (existingFieldInv.unit || 0) - numValue;
+                const newAmount = Math.max(0, (existingFieldInv.unit || 0) - numValue);
+                const newBulto = Math.max(0, (existingFieldInv.weigth?.Bulto || existingFieldInv.unit || 0) - bultos);
+                const newKg = Math.max(0, (existingFieldInv.weigth?.KG || 0) - numValue);
                 const { error: invUpdateError } = await _supabase.from('products')
-                    .update({ unit: newAmount })
+                    .update({ unit: newAmount, weigth: { ...(existingFieldInv.weigth || {}), 'Bulto': newBulto, 'KG': newKg } })
                     .eq('id', existingFieldInv.id);
                 if (invUpdateError) console.error(`Error actualizando inventario animal para campo ${label}:`, invUpdateError.message);
             }
         });
 
     await Promise.all(invOpsOut);
+
+    // Si es marinado, crear nuevos items de inventario con el sufijo (marinado)
+    if (isMarinado) {
+        const marinadoLabels = Object.entries(productionData)
+            .filter(([label, value]) => {
+                const num = parseFloat(value);
+                return sumLabelsOut.has(label) && !isNaN(num) && num !== 0;
+            });
+        
+        const marinadoCodes = await generateNextInventoryCode(marinadoLabels.length);
+        
+        const marinadoOps = marinadoLabels.map(async ([label, value], idx) => {
+            const numValue = parseFloat(value);
+            const marinadoName = `${label} (marinado)`;
+            const priceKey = `Precio: ${label}`;
+            const pricePerBulto = productionData[priceKey] ? parseInt(productionData[priceKey]) : 0;
+            const pricePerKg = productionData[`Precio KG: ${label}`] ? parseInt(productionData[`Precio KG: ${label}`]) : 0;
+            const bultosKey = `Bultos: ${label}`;
+            const bultos = productionData[bultosKey] ? parseInt(productionData[bultosKey]) : 0;
+
+            const salePriceObject = {};
+            if (pricePerBulto > 0) salePriceObject['Bulto'] = pricePerBulto;
+            if (pricePerKg > 0) salePriceObject['KG'] = pricePerKg;
+            
+            // Buscar o crear definición de producto marinado
+            const baseCode = marinadoCodes[idx];
+            const { data: existingProd, error: existingError } = await _supabase
+                .from('products')
+                .select('base_code, sale_price')
+                .eq('name', marinadoName).eq('inventory', false)
+                .maybeSingle();
+            
+            if (existingProd) {
+                if (Object.keys(salePriceObject).length > 0) {
+                    await _supabase.from('products')
+                        .update({ sale_price: salePriceObject })
+                        .eq('base_code', existingProd.base_code);
+                }
+            } else {
+                await _supabase.from('products').insert({
+                    base_code: baseCode,
+                    name: marinadoName,
+                    unit: 0,
+                    medit: ['Bulto', 'KG'],
+                    weigth: { 'Bulto': 0, 'KG': 0 },
+                    sale_price: salePriceObject,
+                    buy_price: null,
+                    total: 0,
+                    animal: false,
+                    to_sale: true,
+                    inventory: false
+                });
+            }
+            
+            // Crear item de inventario marinado
+            const invCode = (await generateNextInventoryCode())[0];
+            await _supabase.from('products').insert({
+                base_code: existingProd ? existingProd.base_code : baseCode,
+                inventory_code: invCode,
+                name: marinadoName,
+                unit: bultos,
+                weigth: { 'Bulto': bultos, 'KG': numValue },
+                sale_price: salePriceObject,
+                farm: farm,
+                provider: [],
+                medit: ['Bulto', 'KG'],
+                inventory: true,
+                created_at: getColombiaTimestamp()
+            });
+        });
+        
+        await Promise.all(marinadoOps);
+    }
 
     // Guardar registros de bultos por campo de suma
     const bultosEntriesSalida = Object.entries(productionData)
