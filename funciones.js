@@ -417,18 +417,25 @@ document.getElementById('formCreateProvince')?.addEventListener('submit', async 
 });
 
 // Manejo de Modales
+let modalStack = [];
+
 function showModal(id) {
     const overlay = document.getElementById('modalOverlay');
     overlay.classList.remove('hidden');
-    document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+    
+    const currentOpen = document.querySelector('.modal:not(.hidden)');
+    if (currentOpen && currentOpen.id !== id) {
+        modalStack.push(currentOpen.id);
+        currentOpen.classList.add('hidden');
+    }
+    
     const modal = document.getElementById(id);
 
     // Ingeniería de Sistemas: Resetear estado de edición al abrir como "Nuevo"
     const form = modal.querySelector('form');
     if (form) {
-        // La comprobación de 'isEdit' se hace aquí para decidir si se resetea o no.
         const isEdit = form.dataset.mode === 'edit';
-        if (!isEdit && id !== 'modalEditShed') { // <-- AÑADIDO: No resetear el form de edición de galpón
+        if ( (!isEdit && id !== 'modalEditShed') || id === 'modalCreateFarm' ) {
             form.reset();
             delete form.dataset.mode;
             delete form.dataset.originalId;
@@ -486,8 +493,23 @@ function showModal(id) {
     if(id === 'modalOutboundInventory') prepareOutboundModal();
 }
 
-function closeModals() {
-    document.getElementById('modalOverlay').classList.add('hidden');
+function closeModals(clearStack = true) {
+    const current = document.querySelector('.modal:not(.hidden)');
+    if (current) {
+        current.classList.add('hidden');
+    }
+    
+    if (clearStack) {
+        modalStack = [];
+        document.getElementById('modalOverlay').classList.add('hidden');
+    } else {
+        const previous = modalStack.pop();
+        if (previous) {
+            document.getElementById(previous).classList.remove('hidden');
+        } else {
+            document.getElementById('modalOverlay').classList.add('hidden');
+        }
+    }
 }
 
 async function loadFarms() {
@@ -735,9 +757,7 @@ document.getElementById('formCreateShed')?.addEventListener('submit', async (e) 
     const shedData = {
         number: parseInt(document.getElementById('shedNumber').value),
         farm: document.getElementById('shedFarm').value,
-        ability: parseInt(document.getElementById('shedAbility').value),
         animal: document.getElementById('shedAnimal').value,
-        used: 0, // Valor inicial para un nuevo galpón
         created_at: getColombiaTimestamp()
     };
 
@@ -764,7 +784,6 @@ document.getElementById('formEditShed')?.addEventListener('submit', async (e) =>
     const shedData = {
         number: parseInt(document.getElementById('editShedNumber').value),
         farm: document.getElementById('editShedFarm').value,
-        ability: parseInt(document.getElementById('editShedAbility').value),
         animal: document.getElementById('editShedAnimal').value,
     };
 
@@ -1190,17 +1209,13 @@ document.getElementById('formCreateFarm')?.addEventListener('submit', async (e) 
     const farmData = {
         name: document.getElementById('farmName').value,
         address: document.getElementById('farmAddress').value,
-        // Ingeniería de Datos: 'animals' ahora es un array de strings (tipos de animales)
-        // Ingeniería de Datos: 'animals_capacity' ahora es un solo número (capacidad máxima total)
-        animals: [], // Se elimina la entrada manual de animales aquí
-        animals_capacity: parseInt(document.getElementById('farmCapacity').value)
+        animals: [document.getElementById('farmAnimal').value]
     };
 
     let result;
     if (isEdit) {
         result = await _supabase.from('farms').update(farmData).eq('name', form.dataset.originalId);
     } else {
-        farmData.animals_in_farm = 0;
         farmData.created_at = getColombiaTimestamp();
         result = await _supabase.from('farms').insert([farmData]);
     }
@@ -1229,10 +1244,10 @@ document.getElementById('btnGestionGranjas').addEventListener('click', async () 
     const tableContainer = document.getElementById('farmsTableContainer');
     tableContainer.innerHTML = "<p style='padding:20px;'>Cargando datos de granjas...</p>";
 
-    // Consulta a la tabla 'farms' incluyendo la nueva columna animals_in_farm
+    // Consulta a la tabla 'farms'
     const { data, error } = await _supabase
         .from('farms')
-        .select('name, address, animals, animals_capacity, animals_in_farm');
+        .select('name, address, animals');
 
     if (error) {
         console.error("Error al obtener datos de granjas:", error);
@@ -1253,8 +1268,6 @@ function renderFarmsTable(farms) {
                     <th>Nombre</th>
                     <th>Dirección</th>
                     <th>Animales</th>
-                    <th>Capacidad</th>
-                    <th>Capacidad ocupada</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
@@ -1264,8 +1277,6 @@ function renderFarmsTable(farms) {
                         <td>${f.name || 'Sin nombre'}</td>
                         <td>${f.address || 'N/A'}</td>
                         <td>${Array.isArray(f.animals) && f.animals.length > 0 ? f.animals.join(', ') : 'No aplica'}</td>
-                        <td>${formatNumber(f.animals_capacity)}</td>
-                        <td>${formatNumber(f.animals_in_farm)}</td>
                         <td>
                             <div style="display:flex; gap:5px;">
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editFarm('${f.name}')">Editar</button>
@@ -1768,19 +1779,15 @@ function renderShedsTable(data) {
                 <tr>
                     <th>Número</th>
                     <th>Granja</th>
-                    <th>Capacidad</th>
-                    <th>Ocupado</th>
                     <th>Animal</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
-                ${data.length === 0 ? '<tr><td colspan="6" style="text-align:center;">No hay datos para mostrar con los filtros seleccionados</td></tr>' : data.map(s => `
+                ${data.length === 0 ? '<tr><td colspan="4" style="text-align:center;">No hay datos para mostrar con los filtros seleccionados</td></tr>' : data.map(s => `
                     <tr>
                         <td>${s.number}</td>
                         <td>${s.farm}</td>
-                        <td>${formatNumber(s.ability)}</td>
-                        <td>${formatNumber(s.used)}</td>
                         <td>${s.animal || 'N/A'}</td>
                         <td>
                             <div style="display:flex; gap:5px;">
@@ -1911,8 +1918,7 @@ window.editFarm = async (name) => {
     
     document.getElementById('farmName').value = data.name;
     document.getElementById('farmAddress').value = data.address;
-    document.getElementById('farmAnimals').value = Array.isArray(data.animals) ? data.animals.join(', ') : '';
-    document.getElementById('farmCapacity').value = data.animals_capacity;
+    document.getElementById('farmAnimal').value = Array.isArray(data.animals) && data.animals.length > 0 ? data.animals[0] : '';
 };
 
 window.deleteFarm = async (name) => {
@@ -2020,7 +2026,6 @@ window.editShed = async (farm, number) => {
     await loadAnimalsForShed(aSelect); // Pasar el selector correcto para cargar los animales
     document.getElementById('editShedNumber').value = data.number;
     aSelect.value = data.animal;
-    document.getElementById('editShedAbility').value = data.ability;
 };
 
 window.deleteShed = async (farm, number) => {

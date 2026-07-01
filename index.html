@@ -137,7 +137,7 @@
     <div id="modalOverlay" class="modal-overlay hidden">
         <!-- Crear Usuario -->
         <div id="modalCreateUser" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Nuevo Usuario</h4>
             <form id="formCreateUser" autocomplete="off">
                 <input type="text" id="newName" placeholder="Nombre completo" required>
@@ -148,53 +148,53 @@
                 <select id="newRole" required></select>
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Actualizar Contraseña -->
         <div id="modalUpdatePass" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Cambiar Contraseña</h4>
             <form id="formUpdatePass" autocomplete="off">
                 <input type="password" id="updPass" placeholder="Nueva contraseña" required>
                 <button type="submit">Actualizar</button>
-                <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
             </form>
         </div>
 
         <!-- Actualizar Datos -->
         <div id="modalUpdateData" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Mis Datos</h4>
             <form id="formUpdateData" autocomplete="off">
                 <input type="text" id="updName" placeholder="Nombre completo">
                 <input type="number" id="updCedula" placeholder="Cédula">
                 <select id="updFarm"></select>
                 <button type="submit">Actualizar</button>
-                <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
             </form>
         </div>
 
         <!-- Crear Granja (FASE 4.1) -->
         <div id="modalCreateFarm" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Nueva Granja</h4>
             <form id="formCreateFarm" autocomplete="off">
                 <input type="text" id="farmName" placeholder="Nombre de la granja" required>
                 <input type="text" id="farmAddress" placeholder="Dirección" required>
-                <input type="number" id="farmCapacity" placeholder="Capacidad máxima de animales" required>
+                <input type="text" id="farmAnimal" placeholder="Animal" required>
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Registrar Proveedor (FASE 5.1) -->
         <div id="modalCreateSupplier" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Nuevo Proveedor</h4>
             <form id="formCreateSupplier" autocomplete="off">
                 <input type="text" id="supName" placeholder="Nombre del proveedor" required>
@@ -203,14 +203,14 @@
                 <select id="supProducts" multiple required style="height: 100px;"></select>
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Agregar Producto (FASE 5.2) -->
         <div id="modalCreateProduct" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Nuevo Producto</h4>
             <form id="formCreateProduct" autocomplete="off">
                 <input type="text" id="prodCode" placeholder="Código (Automático)" readonly style="background: #f1f3f5; cursor: not-allowed;">
@@ -259,14 +259,14 @@
                 </div>
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Modal para mostrar Productos Base (Definiciones) -->
         <div id="modalBaseProducts" class="modal hidden" style="width: 80vw; max-width: 900px;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Definición de Productos</h4>
             <div class="action-bar" style="justify-content: flex-end; margin-bottom: 15px;">
                 <button class="action-btn" onclick="showModal('modalCreateProduct')">Definir Nuevo Producto</button>
@@ -280,21 +280,21 @@
 
         <!-- Crear Categoría (FASE 5.3) -->
         <div id="modalCreateCategory" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Nueva Categoría</h4>
             <form id="formCreateCategory" autocomplete="off">
                 <input type="text" id="catName" placeholder="Nombre de la categoría" required>
                 <input type="text" id="catCode" placeholder="Código (Automático)" readonly style="background: #f1f3f5; cursor: not-allowed;">
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Listar Categorías (FASE 9.5) -->
         <div id="modalListCategories" class="modal hidden" style="width: 450px; position: relative;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Categorías</h4>
             <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
                 <button class="action-btn" onclick="showModal('modalCreateCategory')" style="width: auto; margin: 0;">Registrar categoria</button>
@@ -306,7 +306,7 @@
 
         <!-- Ingresar Inventario (FASE 6.2) -->
         <div id="modalInboundInventory" class="modal hidden" style="width: 450px; position: relative;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Ingreso de Inventario</h4>
             <form id="formInboundInventory" autocomplete="off">
                 <label style="font-size: 12px; color: #636e72;">Producto:</label>
@@ -333,7 +333,7 @@
                     
                     <div class="modal-btns" style="margin-top: 20px;">
                         <button type="submit">Registrar Ingreso</button>
-                        <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                        <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                     </div>
                 </div>
             </form>
@@ -341,7 +341,7 @@
 
         <!-- Registrar Salida (FASE 6.4) -->
         <div id="modalOutboundInventory" class="modal hidden" style="width: 450px; position: relative;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Salida de Inventario</h4>
             <form id="formOutboundInventory" autocomplete="off">
                 <label style="font-size: 12px; color: #636e72;">Producto:</label>
@@ -365,7 +365,7 @@
                     
                     <div class="modal-btns" style="margin-top: 20px;">
                         <button type="submit">Registrar Salida</button>
-                        <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                        <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                     </div>
                 </div>
             </form>
@@ -373,7 +373,7 @@
 
         <!-- Editar Inventario (FASE 11.5) - Rediseñado para paridad con Inbound -->
         <div id="modalEditInventory" class="modal hidden" style="width: 450px; position: relative;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Editar Existencias</h4>
             <form id="formEditInventory" autocomplete="off">
                 <label style="font-size: 12px; color: #636e72;">Producto:</label>
@@ -409,14 +409,14 @@
 
                 <div class="modal-btns" style="margin-top: 20px;">
                     <button type="submit">Actualizar Registro</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Registrar Galpón (FASE 8.2) -->
         <div id="modalCreateShed" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Nuevo Galpón</h4>
             <form id="formCreateShed" autocomplete="off">
                 <label style="font-size: 12px; color: #636e72;">Granja:</label>
@@ -424,17 +424,16 @@
                 <input type="text" id="shedNumber" placeholder="Número (Automático)" readonly style="background: #f1f3f5;">
                 <label style="font-size: 12px; color: #636e72;">Animal:</label>
                 <select id="shedAnimal" required><option value="">Seleccione animal...</option></select>
-                <input type="number" id="shedAbility" placeholder="Capacidad de animales" required>
                 <div class="modal-btns">
                     <button type="submit">Guardar Galpón</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Editar Galpón (Nuevo Modal Independiente) -->
         <div id="modalEditShed" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Editar Galpón</h4>
             <form id="formEditShed" autocomplete="off">
                 <label style="font-size: 12px; color: #636e72;">Granja:</label>
@@ -442,17 +441,16 @@
                 <input type="text" id="editShedNumber" placeholder="Número" readonly style="background: #f1f3f5;">
                 <label style="font-size: 12px; color: #636e72;">Animal:</label>
                 <select id="editShedAnimal" required><option value="">Seleccione animal...</option></select>
-                <input type="number" id="editShedAbility" placeholder="Capacidad de animales" required>
                 <div class="modal-btns">
                     <button type="submit">Actualizar Galpón</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Configuración Obligatoria de Franquicia (PROVINCE) -->
         <div id="modalCreateProvince" class="modal hidden">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Configuración Obligatoria: Datos de Franquicia</h4>
             <p style="font-size: 12px; color: #636e72; margin-bottom: 15px;">Antes de continuar, debe registrar los datos legales de la franquicia a cargo.</p>
             <form id="formCreateProvince" autocomplete="off">
@@ -466,7 +464,7 @@
 
         <!-- Gestión de Animales en Galpón (Nuevo Modal) -->
         <div id="modalManageShedAnimals" class="modal hidden" style="max-width:95vw; width: auto; position: relative;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4 id="manageShedAnimalsTitle">Gestión de Animales</h4>
             <div class="action-bar" style="display: flex; gap: 10px; margin-bottom: 20px; align-items:center;">
                 <div id="shedAnimalLabel" style="font-size:13px; color:#2d3436; font-weight:700; padding:6px 10px; border: 1px solid #dfe6e9; border-radius: 5px; background: #f9f9f9;"></div>
@@ -516,7 +514,7 @@
 
         <!-- Formulario de Ingreso de Animales (Dinámico) -->
         <div id="modalInboundAnimal" class="modal hidden" style="width: 500px;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Ingreso de Animales al Galpón</h4>
             <form id="formInboundAnimal" autocomplete="off">
                 <label style="font-size: 12px; color: #636e72;">Seleccione el Animal:</label>
@@ -564,14 +562,14 @@
 
                 <div class="modal-btns" style="margin-top: 20px;">
                     <button type="submit">Confirmar Ingreso</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Configuración de Campos de Producción (Nuevo) -->
         <div id="modalConfigAnimalFields" class="modal hidden" style="width: 500px;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4 id="configAnimalTitle" style="color: #2d3436; margin-bottom: 10px;">Configurar Producción</h4>
             <p style="font-size: 12px; color: #636e72; margin-bottom: 15px;">Defina los campos dinámicos y su comportamiento para cada proceso.</p>
             
@@ -598,12 +596,7 @@
                             <label style="font-size: 11px; color: #636e72;">Operación:</label>
                             <select id="newFieldOp" required style="margin-bottom: 0;">
                                 <option value="sum">Suma</option>
-                                <option value="sub">Resta</option>
                                 <option value="formula_sum">Sumatoria</option>
-                                <option value="formula_diff">Base - Total</option>
-                                <option value="formula_add">Base + Total</option>
-                                <option value="formula_div">División / Porcentaje</option>
-                                <option value="none">Info</option>
                             </select>
                         </div>
 
@@ -640,13 +633,13 @@
                 </div>
             </form>
             <div class="modal-btns" style="margin-top: 15px;">
-                <button type="button" class="action-btn" style="width: 100%; background: #2d3436;" onclick="closeModals()">Finalizar Configuración</button>
+                <button type="button" class="action-btn" style="width: 100%; background: #2d3436;" onclick="closeModals(false)">Finalizar Configuración</button>
             </div>
         </div>
 
         <!-- Formulario de Salida de Animales (Nuevo) -->
         <div id="modalOutboundAnimal" class="modal hidden" style="width: 500px;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Salida de Animales del Galpón</h4>
             <form id="formOutboundAnimal" autocomplete="off">
                 <label style="font-size: 12px; color: #636e72;">Animal a retirar:</label>
@@ -699,14 +692,14 @@
 
                 <div class="modal-btns" style="margin-top: 20px;">
                     <button type="submit" class="action-btn" style="width: 100%;">Registrar Salida</button>
-                    <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>
+                    <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
                 </div>
             </form>
         </div>
 
         <!-- Modal para Ver Precios de Producción -->
         <div id="modalViewPrices" class="modal hidden" style="max-width: 800px; width: auto;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Precios de Venta por Lote</h4>
             <div style="display: flex; gap: 20px;">
                 <div style="flex: 1;">
@@ -730,7 +723,7 @@
 
         <!-- Modal para Configurar y Ver Estadísticas de Producción -->
         <div id="modalConfigStats" class="modal hidden" style="width: 600px;">
-            <button type="button" class="close-modal" onclick="closeModals()">&times;</button>
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4 id="statsTitle">Parámetros de Producción</h4>
             <p style="font-size: 12px; color: #636e72; margin-bottom: 15px;">Configure estadísticas cruzando datos de entradas y salidas.</p>
 
