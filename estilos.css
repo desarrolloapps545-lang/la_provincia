@@ -204,21 +204,23 @@ button:hover {
 /* Estilos de la Tabla Profesional */
 .table-container {
     background: white;
-    border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     overflow: hidden;
+    border-radius: 0;
+    border: 2px solid #000;
 }
 
 /* Estilos para tablas dinámicas generadas en modal de galpones */
 #shedAnimalInboundTableBody table, #shedAnimalOutboundTableBody table {
     width: 100%;
     border-collapse: collapse;
-    border: 1px solid #bdbdbd; /* borde externo */
+    border: 2px solid #000;
+    border-radius: 0;
 }
 
 #shedAnimalInboundTableBody table th, #shedAnimalInboundTableBody table td,
 #shedAnimalOutboundTableBody table th, #shedAnimalOutboundTableBody table td {
-    border: 1px solid #bdbdbd; /* borde interno */
+    border: 1px solid #000;
     padding: 8px 10px;
     vertical-align: middle;
     text-align: center;
@@ -228,20 +230,11 @@ button:hover {
     background: #f8f9fa;
 }
 
-#shedAnimalInboundTableBody, #shedAnimalOutboundTableBody {
-    padding: 0;
-}
-
-/* Ensure no gaps between tables/groups */
-#shedAnimalInboundTableBody > div, #shedAnimalOutboundTableBody > div {
-    margin: 0;
-    padding: 0;
-}
-
 table {
     width: 100%;
     border-collapse: collapse;
     text-align: left;
+    border-radius: 0;
 }
 
 thead {
@@ -251,7 +244,7 @@ thead {
 
 th, td {
     padding: 15px 20px;
-    border-bottom: 1px solid #eee;
+    border: 1px solid #000;
 }
 
 tr:hover {
