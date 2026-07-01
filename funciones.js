@@ -2564,13 +2564,19 @@ async function loadDynamicProductionFields(animalName, formType = 'ingreso') {
                            placeholder="Bultos" 
                            style="padding: 6px 8px; height: 32px; font-size: 13px; border-left: 3px solid #fdcb6e; background: #fffbf0;" 
                            min="0" step="1">
-                    <input type="number" 
-                           class="price-dynamic-input" 
-                           data-label="${f.field_label}" 
-                           placeholder="Precio x bulto" 
-                           style="padding: 6px 8px; height: 32px; font-size: 13px; border-left: 3px solid #0984e3; background: #ebf5fb; width: 100px;" 
-                           min="0" step="1000">
-                ` : ''}
+                     <input type="number" 
+                            class="price-dynamic-input" 
+                            data-label="${f.field_label}" 
+                            placeholder="Precio x bulto" 
+                            style="padding: 6px 8px; height: 32px; font-size: 13px; border-left: 3px solid #0984e3; background: #ebf5fb; width: 100px;" 
+                            min="0" step="1000">
+                     <input type="number" 
+                            class="price-kg-dynamic-input" 
+                            data-label="${f.field_label}" 
+                            placeholder="Precio x KG" 
+                            style="padding: 6px 8px; height: 32px; font-size: 13px; border-left: 3px solid #e17055; background: #fef9e7; width: 100px;" 
+                            step="any">
+                 ` : ''}
             </div>
         </div>
         ${allowAdj ? `
@@ -2597,7 +2603,7 @@ async function loadDynamicProductionFields(animalName, formType = 'ingreso') {
 ['inboundRegisterPriceKg', 'outboundRegisterPriceKg'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', function() {
         const containerId = id.startsWith('inbound') ? 'dynamicProductionFields' : 'dynamicProductionFieldsOut';
-        document.querySelectorAll(`#${containerId} .price-kg-dynamic-input`).forEach(input => input.parentElement.classList.toggle('hidden', !this.checked));
+        document.querySelectorAll(`#${containerId} .price-kg-dynamic-input`).forEach(input => input.classList.toggle('hidden', !this.checked));
     });
 });
 
