@@ -1065,7 +1065,7 @@ async function prepareOutboundModal() {
         .order('name');
     
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>' + 
-        (productsInfo || []).map(p => `<option value="${p.id}" data-unit='${JSON.stringify(p.unit)}' data-medit='${JSON.stringify(p.medit)}' data-name="${p.name}" data-farm="${p.farm}" data-weigth='${JSON.stringify(p.weigth || null)}' data-shed='${JSON.stringify(p.shed || {})}'>${p.name}</option>`).join('');
+        (productsInfo || []).map(p => `<option value="${p.id}" data-unit='${JSON.stringify(p.unit)}' data-medit='${JSON.stringify(p.medit)}' data-name="${p.name}" data-farm="${p.farm}" data-weigth='${JSON.stringify(p.weigth || null)}' data-shed='${encodeURIComponent(JSON.stringify(p.shed || {}))}'>${p.name}</option>`).join('');
 }
 
 document.getElementById('outboundProduct')?.addEventListener('change', function() {
@@ -1074,7 +1074,7 @@ document.getElementById('outboundProduct')?.addEventListener('change', function(
     
     const farmName = selected.dataset.farm;
     const weigthData = JSON.parse(selected.getAttribute('data-weigth') || 'null');
-    const shedJson = normalizeShed(selected.getAttribute('data-shed') || '{}');
+    const shedJson = normalizeShed(JSON.parse(decodeURIComponent(selected.getAttribute('data-shed') || '{}')));
     const shedKeys = Object.keys(shedJson);
     const outboundUnitsContainer = document.getElementById('outboundUnitsContainer');
     outboundUnitsContainer.innerHTML = '';
@@ -1084,18 +1084,35 @@ document.getElementById('outboundProduct')?.addEventListener('change', function(
 
     const shedSelect = document.getElementById('outboundShed');
     shedSelect.innerHTML = '<option value="">Seleccione galpón...</option>' + shedKeys.map(k => `<option value="${k}">${k}</option>`).join('');
-    if (shedKeys.length <= 1) {
-        shedSelect.value = shedKeys[0] || '';
+    if (shedKeys.length === 0) {
+        shedSelect.value = '';
         shedSelect.disabled = true;
+        document.getElementById('outboundShedContainer').classList.add('hidden');
+        renderOutboundStock({}, weigthData, selected);
+    } else if (shedKeys.length === 1) {
+        shedSelect.value = shedKeys[0];
+        shedSelect.disabled = true;
+        document.getElementById('outboundShedContainer').classList.remove('hidden');
+        renderOutboundStock(shedJson[shedKeys[0]] || {}, weigthData, selected);
     } else {
-        shedSelect.value = shedKeys[0] || '';
+        shedSelect.value = shedKeys[0];
         shedSelect.disabled = false;
+        document.getElementById('outboundShedContainer').classList.remove('hidden');
+        renderOutboundStock(shedJson[shedKeys[0]] || {}, weigthData, selected);
     }
-    document.getElementById('outboundShedContainer').classList.remove('hidden');
-
-    renderOutboundStock(shedJson[String(shedSelect.value)] || {}, weigthData, selected);
 
     document.getElementById('outboundExtraFields').classList.remove('hidden');
+});
+
+document.getElementById('outboundShed')?.addEventListener('change', function() {
+    const selected = document.getElementById('outboundProduct').options[document.getElementById('outboundProduct').selectedIndex];
+    if (!selected || !selected.value) return;
+    
+    const weigthData = JSON.parse(selected.getAttribute('data-weigth') || 'null');
+    const shedJson = normalizeShed(JSON.parse(decodeURIComponent(selected.getAttribute('data-shed') || '{}')));
+    const selectedShed = this.value;
+    const shedStock = selectedShed ? (shedJson[selectedShed] || {}) : {};
+    renderOutboundStock(shedStock, weigthData, selected);
 });
 
 function renderOutboundStock(shedStock, weigthData, selectedOption) {
