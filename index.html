@@ -318,6 +318,15 @@
                         <div id="inboundShedInfo" style="font-size: 11px; color: #d63031; margin-top: 5px;" class="hidden"></div>
                     </div>
 
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
+                        <input type="checkbox" id="inboundToShed" style="width: auto; margin: 0;">
+                        <label for="inboundToShed" style="margin: 0; font-size: 14px; font-weight: normal; color: #636e72;">Ingreso a galpón</label>
+                    </div>
+                    <div id="inboundShedSelectContainer" class="hidden" style="margin-top: 10px;">
+                        <label style="font-size: 12px; color: #636e72;">Galpón:</label>
+                        <select id="inboundShedSelect"><option value="">Seleccione galpón...</option></select>
+                    </div>
+
                     <div id="inboundUnitsContainer" style="display: flex; gap: 10px; margin-top: 10px;"></div>
 
                     <label style="font-size: 12px; color: #636e72;">Fecha de Entrada:</label>
@@ -347,9 +356,9 @@
                     <label style="font-size: 12px; color: #636e72;">Granja de origen:</label>
                     <input type="text" id="outboundFarm" readonly style="background: #f1f3f5;">
 
-                    <div id="outboundShedContainer" class="hidden" style="margin-top: 10px;">
+                    <div id="outboundShedContainer" style="margin-top: 10px;">
                         <label style="font-size: 12px; color: #636e72;">Galpón:</label>
-                        <select id="outboundShed"><option value="">Seleccione galpón...</option></select>
+                        <select id="outboundShed" disabled><option value="">Seleccione galpón...</option></select>
                     </div>
 
                     <div id="outboundUnitsContainer" style="display: flex; gap: 10px; margin-top: 10px;"></div>
@@ -419,7 +428,7 @@
                 <select id="shedFarm" required><option value="">Seleccione granja...</option></select>
                 <input type="text" id="shedNumber" placeholder="Número (Automático)" readonly style="background: #f1f3f5;">
                 <label style="font-size: 12px; color: #636e72;">Animal:</label>
-                <select id="shedAnimal" required><option value="">Seleccione animal...</option></select>
+                <input type="text" id="shedAnimal" placeholder="Animal" required>
                 <div class="modal-btns">
                     <button type="submit">Guardar Galpón</button>
                     <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
@@ -436,7 +445,7 @@
                 <select id="editShedFarm" required><option value="">Seleccione granja...</option></select>
                 <input type="text" id="editShedNumber" placeholder="Número" readonly style="background: #f1f3f5;">
                 <label style="font-size: 12px; color: #636e72;">Animal:</label>
-                <select id="editShedAnimal" required><option value="">Seleccione animal...</option></select>
+                <input type="text" id="editShedAnimal" placeholder="Animal" required>
                 <div class="modal-btns">
                     <button type="submit">Actualizar Galpón</button>
                     <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>

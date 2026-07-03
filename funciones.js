@@ -91,6 +91,18 @@ const getNumericFieldValue = (input) => {
     return input.dataset.displayFormat === 'percent' ? parsed / 100 : parsed;
 };
 
+const normalizeShed = (shed) => {
+    if (!shed) return {};
+    if (typeof shed === 'object' && shed !== null) return shed;
+    if (typeof shed === 'string') {
+        try {
+            const parsed = JSON.parse(shed);
+            if (typeof parsed === 'object' && parsed !== null) return parsed;
+        } catch (_) {}
+    }
+    return {};
+};
+
 // Ingeniería de Sistemas: Generador de código correlativo automático para inventario
 const generateNextInventoryCode = async (count = 1) => {
     const { data, error } = await _supabase
@@ -408,11 +420,12 @@ function showModal(id) {
 
     if(id === 'modalCreateUser') prepareRoleDropdown();
     if(id === 'modalUpdateData') prepareUpdateFields();
-    if(id === 'modalCreateSupplier') loadProductsForSelect(); // Esta línea es correcta, carga productos para proveedores.
+    if(id === 'modalCreateSupplier') loadProductsForSelect();
     if(id === 'modalInboundInventory') prepareInboundModal();
     if(id === 'modalOutboundInventory') prepareOutboundModal();
     if(id === 'modalListCategories') renderCategoriesList();
     if(id === 'modalBaseProducts') renderBaseProducts();
+    if(id === 'modalCreateShed') prepareShedModal();
     if(id === 'modalOutboundInventory') prepareOutboundModal();
 }
 
@@ -652,13 +665,11 @@ async function loadAnimalsForShed(targetSelect) {
 
 async function prepareShedModal() {
     const farmSelect = document.getElementById('shedFarm');
-    const animalSelect = document.getElementById('shedAnimal');
     const isEdit = document.getElementById('formCreateShed').dataset.mode === 'edit';
     
     const { data: farms } = await _supabase.from('farms').select('name').order('name');
     farmSelect.innerHTML = '<option value="">Seleccione granja...</option>' + 
         (farms?.map(f => `<option value="${f.name}">${f.name}</option>`).join('') || '');
-    await loadAnimalsForShed(animalSelect); // Cargar los animales desde la tabla products
     
     if (!isEdit) document.getElementById('shedNumber').value = "";
 }
@@ -696,6 +707,34 @@ document.getElementById('formCreateShed')?.addEventListener('submit', async (e) 
 });
 
 
+document.getElementById('formEditShed')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const form = e.target;
+    const originalId = form.dataset.originalId;
+    if (!originalId) {
+        showToast("Error: No se identificó el galpón a actualizar.", "error");
+        return;
+    }
+
+    const [farm, number] = originalId.split('-');
+    const shedData = {
+        number: parseInt(document.getElementById('editShedNumber').value),
+        farm: document.getElementById('editShedFarm').value,
+        animal: document.getElementById('editShedAnimal').value
+    };
+
+    const { error } = await _supabase.from('sheds').update(shedData).eq('farm', farm).eq('number', number);
+
+    if (error) {
+        showToast("Error al actualizar galpón: " + error.message, "error");
+    } else {
+        showToast("Galpón actualizado exitosamente");
+        closeModals();
+        renderInventoryView('sheds');
+    }
+});
+
 // Ingeniería de Sistemas: Lógica de Cierre de Sesión
 document.getElementById('btnLogout')?.addEventListener('click', async () => {
     const { error } = await _supabase.auth.signOut();
@@ -724,7 +763,7 @@ async function prepareInboundModal() {
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>' + 
         uniqueProds.map(p => `
             <option value="${p.name}" data-unit='${JSON.stringify(p.unit)}' data-medit='${JSON.stringify(p.medit)}' data-code="${p.base_code}" data-animal="${p.animal}" data-weigth='${JSON.stringify(p.weigth || null)}'>
-                ${p.name} ${p.type === 'inventory' ? '(Existente)' : ''}
+                ${p.name}
             </option>`).join('');
 
     const { data: farms } = await _supabase.from('farms').select('name').order('name');
@@ -763,29 +802,46 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
     const isAnimal = selected.getAttribute('data-animal') === 'true';
 
     if (weigthData && typeof weigthData === 'object' && Object.keys(weigthData).length > 0) {
-        // Generar campos dinámicos desde el objeto weigth
-        inboundUnitsContainer.innerHTML = Object.entries(weigthData).map(([medit, unit]) => `
+        inboundUnitsContainer.innerHTML = Object.entries(weigthData).map(([medit, stock]) => `
             <div style="flex: 1;">
                 <label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label>
-                <input type="text" class="inbound-unid-input" data-medit="${medit}" placeholder="0">
+                <input type="text" class="inbound-unid-input" data-medit="${medit}" data-base-stock="${stock}" placeholder="0" style="width: 100%;">
+                <div style="font-size: 11px; color: #636e72;">
+                    Disp: ${formatNumber(stock)} | Ingresando: <span class="inbound-enter-amount" data-medit="${medit}">0</span> | Quedará: <span class="inbound-remaining" data-medit="${medit}">${formatNumber(stock)}</span>
+                </div>
             </div>
         `).join('');
+
+        document.querySelectorAll('.inbound-unid-input').forEach(input => {
+            input.addEventListener('input', function() {
+                const medit = this.dataset.medit;
+                const baseStock = parseFloat(this.dataset.baseStock || '0') || 0;
+                const enterAmount = parseFloat(this.value.replace(/\./g, '') || '0') || 0;
+                const remaining = Math.max(0, baseStock - enterAmount);
+
+                const enterSpan = document.querySelector(`.inbound-enter-amount[data-medit="${medit}"]`);
+                const remainingSpan = document.querySelector(`.inbound-remaining[data-medit="${medit}"]`);
+                if (enterSpan) enterSpan.textContent = formatNumber(enterAmount);
+                if (remainingSpan) remainingSpan.textContent = formatNumber(remaining);
+            });
+        });
     } else {
-        // Fallback a un solo campo si no hay weigth
         inboundUnitsContainer.innerHTML = `
-            <div style="flex: 1;"><label style="font-size: 12px; color: #636e72;">Unidades (${meditData[0] || 'N/A'}):</label><input type="text" class="inbound-unid-input" data-medit="${meditData[0] || ''}" placeholder="0"></div>
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #636e72;">Unidades (${meditData[0] || 'N/A'}):</label>
+                <input type="text" class="inbound-unid-input" data-medit="${meditData[0] || ''}" data-base-stock="0" placeholder="0" style="width: 100%;">
+                <div class="inbound-stock-not-available" style="font-size: 11px; color: #d63031;">Producto base sin stock detallado por medidas</div>
+            </div>
         `;
     }
 
     document.getElementById('inboundExtraFields').classList.remove('hidden');
-    // Mostrar/ocultar galpón si es animal
     document.getElementById('inboundShedContainer').classList.toggle('hidden', !isAnimal);
+    document.getElementById('inboundShedSelectContainer').classList.toggle('hidden', !document.getElementById('inboundToShed')?.checked);
 
-    // Resetear selección de granja al cambiar producto
     const farmSelect = document.getElementById('inboundFarm');
     if (farmSelect) farmSelect.value = "";
 
-    // Lógica de Proveedores Disponibles (Coincidencia exacta insensible a mayúsculas)
     const { data: provs } = await _supabase.from('providers').select('name, product');
     const availableProvs = provs.filter(p => 
         Array.isArray(p.product) && p.product.some(prod => prod.toLowerCase() === productName.toLowerCase())
@@ -796,13 +852,39 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
         availableProvs.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
 });
 
+document.getElementById('inboundToShed')?.addEventListener('change', async function() {
+    const show = this.checked;
+    document.getElementById('inboundShedSelectContainer').classList.toggle('hidden', !show);
+    if (show) {
+        const farmSelect = document.getElementById('inboundFarm');
+        if (farmSelect && farmSelect.value) {
+            const { data, error } = await _supabase.from('sheds').select('number').eq('farm', farmSelect.value).order('number');
+            if (!error) {
+                const shedSelect = document.getElementById('inboundShedSelect');
+                shedSelect.innerHTML = '<option value="">Seleccione galpón...</option>' + 
+                    (data?.map(s => `<option value="${s.number}">${s.number}</option>`).join('') || '');
+            }
+        }
+    }
+});
+
 document.getElementById('inboundFarm')?.addEventListener('change', async function() {
     const farmName = this.value;
     const prodSelect = document.getElementById('inboundProduct');
-    const isAnimal = prodSelect.options[prodSelect.selectedIndex]?.dataset.animal === 'true';
+    const selected = prodSelect.options[prodSelect.selectedIndex];
+    const isAnimal = selected?.dataset.animal === 'true';
+    const toShed = document.getElementById('inboundToShed')?.checked;
 
     if (isAnimal && farmName) {
         const shedSelect = document.getElementById('inboundShed');
+        const { data, error } = await _supabase.from('sheds').select('number').eq('farm', farmName).order('number');
+        if (error) return;
+        shedSelect.innerHTML = '<option value="">Seleccione galpón...</option>' + 
+            (data?.map(s => `<option value="${s.number}">${s.number}</option>`).join('') || '');
+    }
+
+    if (toShed && farmName) {
+        const shedSelect = document.getElementById('inboundShedSelect');
         const { data, error } = await _supabase.from('sheds').select('number').eq('farm', farmName).order('number');
         if (error) return;
         shedSelect.innerHTML = '<option value="">Seleccione galpón...</option>' + 
@@ -816,42 +898,64 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
     const selectedOption = document.getElementById('inboundProduct').options[document.getElementById('inboundProduct').selectedIndex];
     const productName = selectedOption.value;
     const baseCode = selectedOption.dataset.code;
-    const inboundUnid = parseFloat((document.querySelector('.inbound-unid-input') || {}).value?.replace(/\./g, '') || '0') || 0;
-    const weigthData = {};
-    document.querySelectorAll('.inbound-unid-input').forEach(input => {
-        const medit = input.dataset.medit;
-        const value = parseFloat(input.value.replace(/\./g, '')) || 0;
-        if (medit && value > 0) weigthData[medit] = value;
-    });
-
     const farmName = document.getElementById('inboundFarm').value;
     const entranceDate = document.getElementById('inboundDate').value;
     const providerName = document.getElementById('inboundProvider').value;
     const description = document.getElementById('inboundDescription').value;
-    const shedValue = document.getElementById('inboundShed').value;
+    const shedValue = document.getElementById('inboundShed').value || document.getElementById('inboundShedSelect')?.value || null;
 
-    // 1. Registrar movimiento en Kardex
-    const { error: moveError } = await _supabase.from('movements').insert([{
+    const weigthData = {};
+    document.querySelectorAll('.inbound-unid-input').forEach(input => {
+        const medit = input.dataset.medit;
+        const value = parseFloat(input.value.replace(/\./g, '') || '0') || 0;
+        if (medit && value > 0) weigthData[medit] = value;
+    });
+
+    if (Object.keys(weigthData).length === 0) {
+        showToast("Ingrese al menos una cantidad.", "error");
+        return;
+    }
+
+    const { data: pData, error: pDataError } = await _supabase.from('products').select('*').eq('base_code', baseCode).eq('inventory', false).limit(1).single();
+    if (pDataError || !pData) return showToast("Error: No se encontró la definición del producto base.", "error");
+
+    const baseWeigth = pData.weigth || {};
+    const newBaseWeigth = { ...baseWeigth };
+    Object.entries(weigthData).forEach(([medit, value]) => {
+        if (newBaseWeigth[medit] !== undefined) {
+            newBaseWeigth[medit] = (newBaseWeigth[medit] || 0) - value;
+        }
+    });
+
+    const insufficient = Object.entries(weigthData).filter(([medit, value]) => (newBaseWeigth[medit] || 0) < 0);
+    if (insufficient.length > 0) {
+        const msgs = insufficient.map(([medit, value]) => `${medit}: solicita ${formatNumber(value)}, disponible ${formatNumber(baseWeigth[medit] || 0)}`).join(' | ');
+        showToast(`Stock insuficiente en producto base: ${msgs}`, "error");
+        return;
+    }
+
+    const movements = Object.entries(weigthData).filter(([,v]) => v > 0).map(([medit, amount]) => ({
         name: productName,
         type: "ingreso",
-        amount: inboundUnid,
-        farm: farmName, // La medida se infiere del producto
+        amount: amount,
+        medit: medit,
+        farm: farmName,
         shed: shedValue || null,
         date_movement: entranceDate,
         provider: providerName || "",
         description: description,
         created_at: getColombiaTimestamp()
-    }]);
+    }));
 
+    const { error: moveError } = await _supabase.from('movements').insert(movements);
     if (moveError) {
-        showToast("Error al registrar movimiento: " + moveError.message, "error");
+        showToast("Error al registrar movimiento(s): " + moveError.message, "error");
         return;
     }
 
-    // 2. Buscar si ya existe un item de inventario para este producto en esta granja
     let { data: currentProd, error: currentProdError } = await _supabase
         .from('products')
-        .select('id, unit, provider')
+        .select('id, unit, provider, weigth, shed')
         .eq('base_code', baseCode)
         .eq('farm', farmName)
         .eq('inventory', true)
@@ -859,10 +963,8 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
 
     let updateError;
     if (!currentProd) {
-        // NO EXISTE: Se crea un nuevo registro de producto para esa granja
-        const { data: pData } = await _supabase.from('products').select('*').eq('base_code', baseCode).eq('inventory', false).limit(1).single();
-        if (!pData) return showToast("Error: No se encontró la definición del producto base.", "error");
-
+        const newUnit = Object.values(weigthData)[0] || 0;
+        const shedJson = shedValue ? { [String(shedValue)]: { ...weigthData } } : {};
         const { error: insErr } = await _supabase.from('products').insert([{
             base_code: pData.base_code,
             inventory_code: await generateNextInventoryCode(),
@@ -874,19 +976,28 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
             to_sale: pData.to_sale,
             inventory: true,
             farm: farmName,
-            unit: Object.values(weigthData)[0] || 0, // Tomar el primer valor como principal
+            shed: shedJson,
+            unit: newUnit,
             weigth: weigthData,
             provider: providerName ? [providerName] : [],
             entrance_date: entranceDate,
-            created_at: getColombiaTimestamp() // Añadir la fecha de creación
+            created_at: getColombiaTimestamp()
         }]);
         updateError = insErr;
     } else {
-        // SÍ EXISTE: Se actualiza el stock (unit) y la fecha de entrada
         const newWeigth = { ...(currentProd.weigth || {}) };
         Object.entries(weigthData).forEach(([medit, value]) => {
             newWeigth[medit] = (newWeigth[medit] || 0) + value;
         });
+
+        const shedJson = normalizeShed(currentProd.shed);
+        if (shedValue) {
+            const key = String(shedValue);
+            if (!shedJson[key]) shedJson[key] = {};
+            Object.entries(weigthData).forEach(([medit, value]) => {
+                shedJson[key][medit] = (shedJson[key][medit] || 0) + value;
+            });
+        }
 
         let providersArray = Array.isArray(currentProd.provider) ? currentProd.provider : [];
         if (providerName && !providersArray.includes(providerName)) {
@@ -896,8 +1007,9 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
         const { error: updErr } = await _supabase
             .from('products')
             .update({ 
-                unit: Object.values(newWeigth)[0] || 0, // Actualizar unit principal
+                unit: Object.values(newWeigth)[0] || 0,
                 weigth: newWeigth, 
+                shed: shedJson,
                 provider: providersArray, entrance_date: entranceDate })
             .eq('id', currentProd.id);
         updateError = updErr;
@@ -906,23 +1018,13 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
     if (updateError) {
         showToast("Error al actualizar existencias: " + updateError.message, "error");
     } else {
-        // 3. Actualizar (restar) el stock del producto base
-        const { data: baseProd, error: baseErr } = await _supabase.from('products').select('unit').eq('base_code', baseCode).eq('inventory', false).single();
-        if (baseErr) {
-            showToast("Advertencia: Ingreso guardado, pero no se pudo actualizar el stock base.", "error");
-        } else {
-            const newBaseStock = (baseProd.unit || 0) - inboundUnid;
-            await _supabase.from('products').update({ unit: newBaseStock }).eq('base_code', baseCode).eq('inventory', false);
-        }
-
+        const newBaseUnit = Object.values(newBaseWeigth)[0] || 0;
+        await _supabase.from('products').update({ unit: newBaseUnit, weigth: newBaseWeigth }).eq('base_code', baseCode).eq('inventory', false);
 
         showToast("Ingreso de inventario procesado correctamente");
-        
-        // Ingeniería de Interfaz: Limpieza total de los datos para el próximo registro
         e.target.reset();
         document.getElementById('inboundExtraFields').classList.add('hidden');
         document.getElementById('inboundShedInfo').classList.add('hidden');
-        
         closeModals();
         renderProductsView();
     }
@@ -958,12 +1060,12 @@ async function prepareOutboundModal() {
     // Carga de productos desde la tabla products (que ahora es el inventario)
     const { data: productsInfo } = await _supabase
         .from('products')
-        .select('id, name, unit, medit, farm, weigth')
-        .eq('inventory', true) // Mostrar todos los productos que son parte del inventario físico
+        .select('id, name, unit, medit, farm, weigth, shed')
+        .eq('inventory', true)
         .order('name');
     
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>' + 
-        (productsInfo || []).map(p => `<option value="${p.id}" data-unit='${JSON.stringify(p.unit)}' data-medit='${JSON.stringify(p.medit)}' data-name="${p.name}" data-farm="${p.farm}" data-weigth='${JSON.stringify(p.weigth || null)}'>${p.name}</option>`).join('');
+        (productsInfo || []).map(p => `<option value="${p.id}" data-unit='${JSON.stringify(p.unit)}' data-medit='${JSON.stringify(p.medit)}' data-name="${p.name}" data-farm="${p.farm}" data-weigth='${JSON.stringify(p.weigth || null)}' data-shed='${JSON.stringify(p.shed || {})}'>${p.name}</option>`).join('');
 }
 
 document.getElementById('outboundProduct')?.addEventListener('change', function() {
@@ -972,30 +1074,73 @@ document.getElementById('outboundProduct')?.addEventListener('change', function(
     
     const farmName = selected.dataset.farm;
     const weigthData = JSON.parse(selected.getAttribute('data-weigth') || 'null');
+    const shedJson = normalizeShed(selected.getAttribute('data-shed') || '{}');
+    const shedKeys = Object.keys(shedJson);
     const outboundUnitsContainer = document.getElementById('outboundUnitsContainer');
     outboundUnitsContainer.innerHTML = '';
 
     document.getElementById('outboundFarm').value = farmName || "";
     document.getElementById('outboundDescription').value = "";
 
-    if (weigthData && typeof weigthData === 'object' && Object.keys(weigthData).length > 0) {
-        outboundUnitsContainer.innerHTML = Object.entries(weigthData).map(([medit, stock]) => `
-            <div style="flex: 1;">
-                <label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label>
-                <input type="text" class="outbound-unid-input" data-medit="${medit}" placeholder="0" data-max="${stock}">
-                <div style="font-size: 11px; color: #636e72; text-align: center;">Disp: ${formatNumber(stock)}</div>
-            </div>
-        `).join('');
+    const shedSelect = document.getElementById('outboundShed');
+    shedSelect.innerHTML = '<option value="">Seleccione galpón...</option>' + shedKeys.map(k => `<option value="${k}">${k}</option>`).join('');
+    if (shedKeys.length <= 1) {
+        shedSelect.value = shedKeys[0] || '';
+        shedSelect.disabled = true;
     } else {
-        const stock = JSON.parse(selected.dataset.unit || '0');
-        const medit = JSON.parse(selected.dataset.medit || '[]')[0] || 'N/A';
-        outboundUnitsContainer.innerHTML = `
-            <div style="flex: 1;"><label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label><input type="text" class="outbound-unid-input" data-medit="${medit}" placeholder="0" data-max="${stock}"><div style="font-size: 11px; color: #636e72; text-align: center;">Disp: ${formatNumber(stock)}</div></div>
-        `;
+        shedSelect.value = shedKeys[0] || '';
+        shedSelect.disabled = false;
     }
+    document.getElementById('outboundShedContainer').classList.remove('hidden');
+
+    renderOutboundStock(shedJson[String(shedSelect.value)] || {}, weigthData, selected);
 
     document.getElementById('outboundExtraFields').classList.remove('hidden');
 });
+
+function renderOutboundStock(shedStock, weigthData, selectedOption) {
+    const outboundUnitsContainer = document.getElementById('outboundUnitsContainer');
+    outboundUnitsContainer.innerHTML = '';
+    const stockForRender = Object.keys(shedStock).length > 0 ? shedStock : weigthData;
+
+    if (stockForRender && typeof stockForRender === 'object' && Object.keys(stockForRender).length > 0) {
+        outboundUnitsContainer.innerHTML = Object.entries(stockForRender).map(([medit, stock]) => `
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label>
+                <input type="text" class="outbound-unid-input" data-medit="${medit}" placeholder="0" data-max="${stock}" style="width: 100%;">
+                <div style="font-size: 11px; color: #636e72;">
+                    Disp: ${formatNumber(stock)} | Saliendo: <span class="outbound-exit-amount" data-medit="${medit}">0</span> | Quedará: <span class="outbound-remaining" data-medit="${medit}">${formatNumber(stock)}</span>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        const stock = parseFloat(selectedOption.dataset.unit || '0');
+        const medit = JSON.parse(selectedOption.dataset.medit || '[]')[0] || 'N/A';
+        outboundUnitsContainer.innerHTML = `
+            <div style="flex: 1;">
+                <label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label>
+                <input type="text" class="outbound-unid-input" data-medit="${medit}" placeholder="0" data-max="${stock}" style="width: 100%;">
+                <div style="font-size: 11px; color: #636e72;">
+                    Disp: ${formatNumber(stock)} | Saliendo: <span class="outbound-exit-amount" data-medit="${medit}">0</span> | Quedará: <span class="outbound-remaining" data-medit="${medit}">${formatNumber(stock)}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    document.querySelectorAll('.outbound-unid-input').forEach(input => {
+        input.addEventListener('input', function() {
+            const medit = this.dataset.medit;
+            const maxStock = parseFloat(this.dataset.max || '0') || 0;
+            const exitAmount = parseFloat(this.value.replace(/\./g, '') || '0') || 0;
+            const remaining = Math.max(0, maxStock - exitAmount);
+
+            const exitSpan = document.querySelector(`.outbound-exit-amount[data-medit="${medit}"]`);
+            const remainingSpan = document.querySelector(`.outbound-remaining[data-medit="${medit}"]`);
+            if (exitSpan) exitSpan.textContent = formatNumber(exitAmount);
+            if (remainingSpan) remainingSpan.textContent = formatNumber(remaining);
+        });
+    });
+}
 
 // Carga de galpones para el formulario de salida al seleccionar granja
 document.getElementById('outboundFarm')?.addEventListener('change', async function() {
@@ -1034,8 +1179,8 @@ document.getElementById('formOutboundInventory')?.addEventListener('submit', asy
     let hasExceededStock = false;
     document.querySelectorAll('.outbound-unid-input').forEach(input => {
         const medit = input.dataset.medit;
-        const value = parseFloat(input.value.replace(/\./g, '')) || 0;
-        const max = parseFloat(input.dataset.max) || 0;
+        const value = parseFloat(input.value.replace(/\./g, '') || '0') || 0;
+        const max = parseFloat(input.dataset.max || '0') || 0;
         if (value > max) hasExceededStock = true;
         if (medit && value > 0) weigthData[medit] = value;
     });
@@ -1043,13 +1188,18 @@ document.getElementById('formOutboundInventory')?.addEventListener('submit', asy
     if (hasExceededStock) return showToast("La cantidad de salida excede el stock disponible.", "error");
 
     const farmName = document.getElementById('outboundFarm').value;
+    const shedValue = document.getElementById('outboundShed').value || null;
     const moveDate = document.getElementById('outboundDate').value;
     const description = document.getElementById('outboundDescription').value;
 
-    // 2. Actualización de tabla products (Resta de stock)
+    if (Object.keys(weigthData).length === 0) {
+        showToast("Ingrese al menos una cantidad.", "error");
+        return;
+    }
+
     const { data: currentProd, error: prodError } = await _supabase
         .from('products')
-        .select('unit')
+        .select('unit, weigth, shed')
         .eq('id', productId)
         .single();
 
@@ -1063,9 +1213,20 @@ document.getElementById('formOutboundInventory')?.addEventListener('submit', asy
         newWeigth[medit] = (newWeigth[medit] || 0) - value;
     });
 
+    const shedJson = normalizeShed(currentProd.shed);
+    if (shedValue && shedJson[shedValue]) {
+        Object.entries(weigthData).forEach(([medit, value]) => {
+            shedJson[shedValue][medit] = (shedJson[shedValue][medit] || 0) - value;
+        });
+        if (Object.values(shedJson[shedValue]).every(v => v <= 0)) {
+            delete shedJson[shedValue];
+        }
+    }
+
     const { error: updateError } = await _supabase.from('products').update({ 
         unit: Object.values(newWeigth)[0] || 0,
         weigth: newWeigth,
+        shed: shedJson,
         description: description 
     }).eq('id', productId);
 
@@ -1074,7 +1235,7 @@ document.getElementById('formOutboundInventory')?.addEventListener('submit', asy
         if (value > 0) {
             await _supabase.from('movements').insert([{
                 name: productName, type: "salida", amount: value, farm: farmName,
-                medit: medit, date_movement: moveDate, provider: "",
+                shed: shedValue, medit: medit, date_movement: moveDate, provider: "",
                 description: description, created_at: getColombiaTimestamp()
             }]);
         }
@@ -1889,7 +2050,6 @@ window.editShed = async (farm, number) => {
         (farms?.map(f => `<option value="${f.name}">${f.name}</option>`).join('') || '');
     fSelect.value = data.farm;
 
-    await loadAnimalsForShed(aSelect); // Pasar el selector correcto para cargar los animales
     document.getElementById('editShedNumber').value = data.number;
     aSelect.value = data.animal;
 };
