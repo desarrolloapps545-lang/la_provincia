@@ -369,7 +369,7 @@ function showModal(id) {
     const form = modal.querySelector('form');
     if (form) {
         const isEdit = form.dataset.mode === 'edit';
-        if ( (!isEdit && id !== 'modalEditShed') || id === 'modalCreateFarm' ) {
+        if (id === 'modalCreateProduct' || id === 'modalCreateFarm' || (!isEdit && id !== 'modalEditShed')) {
             form.reset();
             delete form.dataset.mode;
             delete form.dataset.originalId;
