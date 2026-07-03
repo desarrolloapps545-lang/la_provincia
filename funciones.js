@@ -816,7 +816,7 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
     const selectedOption = document.getElementById('inboundProduct').options[document.getElementById('inboundProduct').selectedIndex];
     const productName = selectedOption.value;
     const baseCode = selectedOption.dataset.code;
-    const inboundUnid = parseInt(document.getElementById('inboundUnid').value.replace(/\./g, '')) || 0;
+    const inboundUnid = parseFloat((document.querySelector('.inbound-unid-input') || {}).value?.replace(/\./g, '') || '0') || 0;
     const weigthData = {};
     document.querySelectorAll('.inbound-unid-input').forEach(input => {
         const medit = input.dataset.medit;
