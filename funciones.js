@@ -8,12 +8,6 @@ const SUPABASE_ANON_PUBLIC_KEY = "TU_SUPABASE_ANON_PUBLIC_KEY_AQUI"; // <--- DEB
 // Inicialización del cliente de Supabase (Ingeniería de Backend en el Cliente)
 const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let CURRENT_USER_ROLE = "";
-window.CURRENT_VIEW_MODE = "products"; // 'products' o 'sheds'
-
-// Variable global para trackear el orden de selección en fórmulas
-let selectedFormulaFields = [];
-
-// Ingeniería de Backend en Frontend: Helper para obtener fecha/hora de Colombia (timestamp sin zona horaria)
 const getColombiaTimestamp = () => {
     return new Intl.DateTimeFormat('sv-SE', {
         timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -97,46 +91,6 @@ const getNumericFieldValue = (input) => {
     return input.dataset.displayFormat === 'percent' ? parsed / 100 : parsed;
 };
 
-const computeFormulaResult = (op, targets, fieldValues) => {
-    if (op === 'formula_sum') {
-        return targets.reduce((sum, label) => sum + (fieldValues[label] || 0), 0);
-    }
-
-    // Si no hay campos seleccionados para las siguientes operaciones, no hay nada que calcular.
-    if (targets.length === 0) return 0;
-
-    const val1 = fieldValues[targets[0]] || 0;
-    const val2 = targets.length > 1 ? (fieldValues[targets[1]] || 0) : 0;
-
-    if (op === 'formula_diff') {
-        // Si solo se selecciona un campo, se asume que es el sustraendo de un minuendo no especificado (o 0).
-        // La lógica correcta es que si se seleccionan 2, es val1 - val2.
-        // Si se selecciona 1, podría ser 0 - val1, o val1 - 0. Asumimos que es una resta entre los seleccionados.
-        return val1 - val2;
-    }
-
-    if (op === 'formula_add') {
-        // Si solo se selecciona un campo, se suma a 0.
-        // Si se seleccionan dos, se suman entre ellos.
-        return val1 + val2;
-    }
-
-    if (op === 'formula_div') {
-        // Si solo se selecciona un campo, no se puede dividir. Se necesitan dividendo y divisor.
-        if (targets.length < 2) {
-            // Podríamos interpretar que es val1 / [algo], pero es ambiguo.
-            // La lógica correcta es que el primer campo seleccionado es el dividendo y el segundo el divisor.
-            // Si solo hay uno, la operación es incompleta.
-            const divisor = fieldValues['Peso Inicial (Ingreso)'] || 0; // Fallback por si la intención era dividir por el peso de ingreso
-            if (divisor !== 0) return val1 / divisor;
-            return 0;
-        }
-        return val2 !== 0 ? val1 / val2 : 0;
-    }
-
-    return 0;
-};
-
 // Ingeniería de Sistemas: Generador de código correlativo automático para inventario
 const generateNextInventoryCode = async (count = 1) => {
     const { data, error } = await _supabase
@@ -199,36 +153,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Listener dinámico para mostrar u ocultar checklist de campos en fórmulas
     document.getElementById('newFieldOp')?.addEventListener('change', async function() {
-        const op = this.value;
-        selectedFormulaFields = []; // Resetear selección al cambiar operación
-        const container = document.getElementById('formulaFieldsContainer');
-        const adjCheckbox = document.getElementById('newFieldAllowAdjustment');
-        const checklist = document.getElementById('formulaFieldsChecklist');
-        const formatContainer = document.getElementById('displayFormatContainer');
-
-        if (op.startsWith('formula_')) {
-            container.classList.remove('hidden');
-            if(adjCheckbox) adjCheckbox.checked = false;
-            if(formatContainer) formatContainer.classList.toggle('hidden', op !== 'formula_div');
-            
-            const animalName = document.getElementById('modalConfigAnimalFields').dataset.animal;
-            
-            // Ingeniería de Datos: Consultar campos de AMBOS formularios para permitir cruce en División
-            const { data: fields } = await _supabase.from('animal_config').select('field_label, form_type').eq('animal_name', animalName);
-            
-            // Añadir "Peso Inicial" manualmente a las opciones seleccionables
-            const allFields = [{ field_label: 'Peso Inicial' }, ...(fields || [])];
-
-            checklist.innerHTML = allFields.map(f => `
-                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #2d3436; margin: 0;">
-                    <input type="checkbox" class="formula-checkbox" value="${f.field_label}" style="width: auto; margin: 0;" onchange="handleFormulaFieldClick(this, '${op}')">
-                    ${f.field_label} ${f.form_type ? `<small style="color:#b2bec3;">(${f.form_type})</small>` : ''}
-                </label>
-            `).join('') || '<span style="font-size:11px; color:#b2bec3;">No hay campos previos configurados.</span>';
-        } else {
-            container.classList.add('hidden');
-            checklist.innerHTML = '';
-        }
     });
 
     // 1. Cargar datos recordados
@@ -471,13 +395,6 @@ function showModal(id) {
                     document.getElementById('prodWeightContainer').classList.add('hidden');
                 }
                 const isAnimalCheck = document.getElementById('prodIsAnimal');
-                if (isAnimalCheck) {
-                    isAnimalCheck.checked = false;
-                    // Ingeniería de Sistemas: Verificación de existencia de elementos para evitar errores de null.
-                    const priceContainer = document.getElementById('prodPriceContainer');
-                    if (priceContainer) priceContainer.classList.remove('hidden');
-                    if (document.getElementById('prodForSaleContainer')) document.getElementById('prodForSaleContainer').classList.remove('hidden');
-                }
                 const forSaleCheck = document.getElementById('prodForSale');
                 if (forSaleCheck) {
                     forSaleCheck.checked = true;
@@ -489,17 +406,13 @@ function showModal(id) {
 
     modal.classList.remove('hidden');
 
-    if(id === 'modalOutboundAnimal') prepareOutboundAnimalModal();
     if(id === 'modalCreateUser') prepareRoleDropdown();
     if(id === 'modalUpdateData') prepareUpdateFields();
     if(id === 'modalCreateSupplier') loadProductsForSelect(); // Esta línea es correcta, carga productos para proveedores.
     if(id === 'modalInboundInventory') prepareInboundModal();
     if(id === 'modalOutboundInventory') prepareOutboundModal();
-    if(id === 'modalCreateShed') prepareShedModal(); // Para la vista de Galpones
     if(id === 'modalListCategories') renderCategoriesList();
-    if(id === 'modalInboundAnimal') prepareInboundAnimalModal();
     if(id === 'modalBaseProducts') renderBaseProducts();
-    if(id === 'modalConfigStats') prepareStatsModal();
     if(id === 'modalOutboundInventory') prepareOutboundModal();
 }
 
@@ -779,38 +692,6 @@ document.getElementById('formCreateShed')?.addEventListener('submit', async (e) 
     } else {
         showToast("Galpón registrado exitosamente");
         closeModals();
-        if (window.CURRENT_VIEW_MODE === 'sheds') {
-            renderInventoryView('sheds');
-        }
-    }
-});
-
-document.getElementById('formEditShed')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const form = e.target;
-    const [origFarm, origNum] = form.dataset.originalId.split('-');
-
-    const shedData = {
-        number: parseInt(document.getElementById('editShedNumber').value),
-        farm: document.getElementById('editShedFarm').value,
-        animal: document.getElementById('editShedAnimal').value,
-    };
-
-    const { error } = await _supabase
-        .from('sheds')
-        .update(shedData)
-        .eq('farm', origFarm)
-        .eq('number', parseInt(origNum));
-
-    if (error) {
-        showToast("Error al actualizar galpón: " + error.message, "error");
-    } else {
-        showToast("Galpón actualizado exitosamente");
-        closeModals();
-        if (window.CURRENT_VIEW_MODE === 'sheds') {
-            renderInventoryView('sheds');
-        }
     }
 });
 
@@ -1445,7 +1326,6 @@ function renderProductsTable(products) {
                         <td>
                             <div style="display:flex; gap:5px;">
                             <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editInventoryItem('${p.id}')">Editar</button>
-                                ${p.animal ? `<button class="action-btn" style="margin:0; padding:5px 10px; background: #6c5ce7;" onclick="openConfigAnimalFields('${p.name}')">Configurar</button>` : ''}
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteProduct('${p.base_code}')">Borrar</button>
                             </div>
                         </td>
@@ -1493,7 +1373,6 @@ async function renderBaseProducts() {
                         <td>
                             <div style="display:flex; gap:5px;">
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editProduct('${p.base_code}')">Editar</button>
-                                ${p.animal ? `<button class="action-btn" style="margin:0; padding:5px 10px; background: #6c5ce7;" onclick="openConfigAnimalFields('${p.name}')">Configurar</button>` : ''}
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteProduct('${p.base_code}')">Borrar</button>
                             </div>
                         </td>
@@ -1503,39 +1382,16 @@ async function renderBaseProducts() {
     container.innerHTML = html;
 }
 
-document.getElementById('prodIsAnimal')?.addEventListener('change', (e) => {
-    const priceContainer = document.getElementById('prodPriceContainer');
-    const buyPrice = document.getElementById('prodBuyPrice');
-    const salePrice = document.getElementById('prodSalePrice');
-    const forSaleContainer = document.getElementById('prodForSaleContainer');
-    const salePriceContainer = document.getElementById('prodSalePriceContainer');
-
-    if (e.target.checked) {
-        // Si es animal, se oculta el precio de venta y el check "para la venta"
-        salePriceContainer.classList.add('hidden');
-        forSaleContainer.classList.add('hidden');
-        salePrice.removeAttribute('required'); // Se elimina el requisito para evitar el error "not focusable"
-    } else {
-        // Si no es animal, se muestran ambos y se re-evalúa la visibilidad del precio de venta
-        salePriceContainer.classList.remove('hidden');
-        forSaleContainer.classList.remove('hidden');
-        updateSalePriceVisibility(); // Llamar a la función que gestiona el 'required'
-    }
-});
-
 function updateSalePriceVisibility() {
     const forSaleCheck = document.getElementById('prodForSale');
     const salePriceContainer = document.getElementById('prodSalePriceContainer');
     const salePrice = document.getElementById('prodSalePrice');
     if (!forSaleCheck || !salePriceContainer || !salePrice) return;
-
-    const isAnimal = document.getElementById('prodIsAnimal')?.checked;
     const hasWeight = document.getElementById('prodHasWeight')?.checked;
     const salePriceKgContainer = document.getElementById('prodSalePriceKgContainer');
 
-    if (forSaleCheck.checked && !isAnimal) {
+    if (forSaleCheck.checked) {
         salePriceContainer.classList.remove('hidden');
-        salePrice.setAttribute('required', 'required');
         if (hasWeight && salePriceKgContainer) salePriceKgContainer.classList.remove('hidden');
     } else {
         salePriceContainer.classList.add('hidden');
@@ -1543,6 +1399,16 @@ function updateSalePriceVisibility() {
         if (salePriceKgContainer) salePriceKgContainer.classList.add('hidden');
     }
 }
+
+// FASE 12: Actualizar placeholder del precio de venta según la medida seleccionada.
+document.getElementById('prodMedit')?.addEventListener('change', function() {
+    const salePriceInput = document.getElementById('prodSalePrice');
+    if (salePriceInput) {
+        const selectedMedit = this.options[this.selectedIndex].text;
+        const newPlaceholder = `Precio venta (${selectedMedit})`;
+        salePriceInput.placeholder = newPlaceholder;
+    }
+});
 
 // FASE 12: Actualizar placeholder del precio de venta según la medida seleccionada.
 document.getElementById('prodMedit')?.addEventListener('change', function() {
@@ -1579,8 +1445,7 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
     const unit = parseFloat(document.getElementById('prodUnit').value) || 0;
     const buyPrice = parseInt(document.getElementById('prodBuyPrice').value.replace(/\./g, '')) || 0;
     const hasWeight = document.getElementById('prodHasWeight')?.checked;
-    const isAnimal = document.getElementById('prodIsAnimal')?.checked || false;
-    const toSale = !isAnimal && (document.getElementById('prodForSale')?.checked !== false);
+    const toSale = document.getElementById('prodForSale')?.checked !== false;
 
     // Ingeniería de Datos: Validación para prevenir duplicados de productos base
     if (!isEdit) {
@@ -1601,8 +1466,8 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
         base_code: document.getElementById('prodCode').value,
         name: document.getElementById('prodName').value,
         buy_price: buyPrice,
-        total: isAnimal ? 0 : unit * buyPrice,
-        animal: isAnimal,
+        total: unit * buyPrice,
+        animal: false,
         to_sale: toSale
     };
 
@@ -1759,7 +1624,6 @@ document.getElementById('btnGestionInventario')?.addEventListener('click', () =>
 });
 
 async function renderInventoryView(mode) {
-    window.CURRENT_VIEW_MODE = mode; // 'sheds'
     // Gestión de Interfaz: Conmutación de vistas
     document.getElementById('usersView').classList.add('hidden');
     document.getElementById('farmsView').classList.add('hidden');
@@ -1801,8 +1665,6 @@ function renderShedsTable(data) {
                             <div style="display:flex; gap:5px;">
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editShed('${s.farm}', ${s.number})">Editar</button>
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteShed('${s.farm}', ${s.number})">Borrar</button>
-                                <!-- Nuevo botón para gestionar animales -->
-                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #6c5ce7;" onclick="manageShedAnimals('${s.farm}', ${s.number})">Animales</button>
                             </div>
                         </td>
                     </tr>
@@ -1851,17 +1713,17 @@ const setupAutoCalc = (unidId, amountId, selectId) => {
     });
 };
 
-// Formateo de precios en el registro de productos
-document.addEventListener('DOMContentLoaded', () => {
-    ['prodBuyPrice', 'prodSalePrice', 'prodSalePriceKg'].forEach(id => {
-        document.getElementById(id)?.addEventListener('input', function(e) {
-            let val = e.target.value.replace(/\D/g, '');
-            e.target.value = formatNumber(val);
-            if (id === 'prodBuyPrice') updateProductTotalProjection(); 
-        });
+// Formateo de precios en el registro de productos y cálculo de proyección
+['prodBuyPrice', 'prodSalePrice', 'prodSalePriceKg'].forEach(id => {
+    const input = document.getElementById(id);
+    if (!input) return;
+    input.addEventListener('input', function(e) {
+        let val = e.target.value.replace(/\D/g, '');
+        e.target.value = formatNumber(val);
+        updateProductTotalProjection();
     });
-    document.getElementById('prodUnit')?.addEventListener('input', updateProductTotalProjection);
 });
+document.getElementById('prodUnit')?.addEventListener('input', updateProductTotalProjection);
 
     document.getElementById('welcomeMessage')?.classList.add('hidden');
 });
@@ -2004,13 +1866,6 @@ window.editProduct = async (code) => {
         document.getElementById('prodWeight').value = hasWeight ? (data.weigth.KG || 0) : "";
     }
 
-    const isAnimalCheck = document.getElementById('prodIsAnimal');
-    if (isAnimalCheck) {
-        isAnimalCheck.checked = data.animal || false;
-        document.getElementById('prodSalePriceContainer').classList.toggle('hidden', data.animal || false);
-        document.getElementById('prodForSaleContainer').classList.toggle('hidden', data.animal || false);
-    }
-    
     const forSaleCheck = document.getElementById('prodForSale');
     if (forSaleCheck) {
         forSaleCheck.checked = data.to_sale !== false; // true por defecto
@@ -2697,11 +2552,6 @@ function calculateAnimalInboundTotals() {
     // Ejecutar doble pasada para asegurar que fórmulas que dependen de otras fórmulas se actualicen correctamente
     processFormulas();
     processFormulas();
-
-    // Cálculo de Disponibilidad Real (Mermando en tiempo real del stock global)
-    // Si es edición, sumamos lo anterior para calcular el impacto neto
-    const diffUnits = inputUnits - oldUnits;
-    const diffWeight = initialWeight - oldWeight;
 
     const availableUnits = stockUnits - diffUnits;
     const availableWeight = stockWeight - diffWeight;
@@ -3533,7 +3383,7 @@ document.getElementById('formEditInventory')?.addEventListener('submit', async (
 
     if (error) showToast("Error: " + error.message, "error");
     else { showToast("Registro actualizado y sincronizado"); closeModals(); loadFilteredInventory(window.CURRENT_INVENTORY_MODE); }
-}); 
+});
 
 window.deleteInventoryItem = async (idOrProduct) => {
     if (!confirm("¿Desea eliminar este registro del inventario?")) return;
@@ -3609,7 +3459,7 @@ document.getElementById('formEditInventory')?.addEventListener('submit', async (
     else { 
         showToast("Registro de inventario actualizado"); 
         closeModals(); 
-        loadFilteredInventory('products'); 
+        loadFilteredInventory('products');
     }
 });
 
@@ -3627,349 +3477,3 @@ window.deleteProduct = async (base_code) => {
 // ==========================================================
 // SECCIÓN DE ESTADÍSTICAS DE PRODUCCIÓN
 // ==========================================================
-
-async function prepareStatsModal() {
-    const modalManage = document.getElementById('modalManageShedAnimals');
-    const animalName = modalManage.querySelector('#shedAnimalLabel span')?.textContent || '';
-
-    if (!animalName) {
-        showToast("No se ha determinado un animal para configurar estadísticas.", "error");
-        return;
-    }
-
-    document.getElementById('statsTitle').textContent = `Parámetros de Producción: ${animalName}`;
-    document.getElementById('formConfigStat').dataset.animalName = animalName;
-
-    // Cargar campos disponibles para los selectores
-    const { data: fields } = await _supabase.from('animal_config').select('field_label, form_type').eq('animal_name', animalName);
-    
-    // Cargar también las estadísticas existentes para poder anidarlas
-    const { data: existingStats } = await _supabase.from('animal_statistics_config').select('statistic_name').eq('animal_name', animalName);
-
-
-    const allFields = [
-        { field_label: 'Peso Inicial', form_type: 'ingreso' },
-        { field_label: 'Peso Inicial', form_type: 'salida' },
-        ...(fields || [])
-    ];
-
-    const optionsHtml = allFields.map(f => {
-        const value = `${f.field_label} (${f.form_type})`;
-        return `<option value="${value}">${value}</option>`;
-    }).join('');
-
-    const statsOptionsHtml = (existingStats || []).map(s => {
-        const value = `${s.statistic_name} (parámetro)`;
-        return `<option value="${value}" data-is-stat="true" style="color:#6c5ce7; font-weight:bold;">${value}</option>`;
-    }).join('');
-
-    const op2Select = document.getElementById('statOperand2Field');
-
-    const finalOptions = optionsHtml + statsOptionsHtml;
-    document.getElementById('statOperand1Field').innerHTML = `<option value="" disabled selected>Seleccione...</option>${finalOptions}`;
-    op2Select.innerHTML = `<option value="" disabled selected>Seleccione...</option><option value="manual_input" style="font-weight:bold; color:#e67e22;">Valor Manual</option>${finalOptions}`;
-
-    // Cargar y mostrar estadísticas ya guardadas
-    await renderSavedStats(animalName);
-}
-
-async function renderSavedStats(animalName) {
-    const container = document.getElementById('statsListContainer');
-    container.innerHTML = "<p style='font-size:12px; text-align:center; color:#b2bec3;'>Cargando parámetros guardados...</p>";
-
-    const { data, error } = await _supabase.from('animal_statistics_config').select('*').eq('animal_name', animalName);
-
-    if (error) {
-        container.innerHTML = `<p class="error-msg">Error al cargar parámetros.</p>`;
-        return;
-    }
-
-    if (!data || data.length === 0) {
-        container.innerHTML = "<p style='font-size:12px; text-align:center; color:#b2bec3;'>No hay parámetros guardados para este animal.</p>";
-        return;
-    }
-
-    container.innerHTML = data.map(stat => `
-        <div style="display:flex; justify-content:space-between; align-items:center; background:white; padding:10px 15px; border-radius:6px; border:1px solid #dfe6e9; margin-bottom:8px;">
-            <span style="font-weight:bold; color: #2d3436; font-size: 14px;">${stat.statistic_name}</span>
-            <button class="btn-cancel" style="width:30px; height:30px; padding:0; border-radius:50%;" onclick="deleteStatistic(${stat.id})">×</button>
-        </div>
-    `).join('');
-}
-
-async function saveStatisticConfig() {
-    const form = document.getElementById('formConfigStat');
-    const animalName = form.dataset.animalName;
-    const statName = document.getElementById('statName').value;
-
-    const operand1 = document.getElementById('statOperand1Field').value;
-    const operand2 = document.getElementById('statOperand2Field').value;
-
-    // Extraer campo, origen y si es una estadística
-    const parseOperand = (opString) => {
-        const statMatch = opString.match(/(.+) \(parámetro\)/);
-        if (statMatch) {
-            return { field: statMatch[1].trim(), source: 'statistic', isStat: true };
-        }
-        const fieldMatch = opString.match(/(.+) \((ingreso|salida)\)/);
-        if (fieldMatch) {
-            return { field: fieldMatch[1].trim(), source: fieldMatch[2], isStat: false };
-        }
-        return { field: opString, source: '', isStat: false };
-    };
-
-    const op1_parsed = parseOperand(operand1);
-    let op2_parsed;
-    if (operand2 === 'manual_input') {
-        op2_parsed = { field: 'manual_input', source: 'manual', isStat: false };
-    } else {
-        op2_parsed = parseOperand(operand2);
-        if (op1_parsed.isStat && op2_parsed.isStat && op1_parsed.field === op2_parsed.field) {
-            return showToast("Error: Una estadística no puede depender de sí misma.", "error");
-        }
-    }
-
-    const statData = {
-        statistic_name: statName,
-        animal_name: animalName,
-        operand1_field: op1_parsed.field,
-        operand1_source: op1_parsed.source,
-        operand1_is_stat: op1_parsed.isStat,
-        operation: document.getElementById('statOperation').value,
-        operand2_field: op2_parsed.field,
-        operand2_source: op2_parsed.source,
-        operand2_is_stat: op2_parsed.isStat,
-        display_format: document.getElementById('statOperation').value === 'div' ? 'percent' : 'number'
-    };
-
-    const { error } = await _supabase.from('animal_statistics_config').insert([statData]);
-
-    if (error) return showToast("Error al guardar: " + error.message, "error");
-    
-    showToast("Parámetro guardado exitosamente.");
-    form.reset();
-    document.getElementById('statOperand2Field').value = "";
-    await prepareStatsModal(); // Recargar todo el modal para que la nueva stat aparezca en los selects
-}
-
-window.deleteStatistic = async (id) => {
-    if (!confirm("¿Está seguro de eliminar este parámetro?")) return;
-    const { error } = await _supabase.from('animal_statistics_config').delete().eq('id', id);
-    if (error) return showToast("Error al eliminar: " + error.message, "error");
-    
-    const animalName = document.getElementById('formConfigStat').dataset.animalName;
-    await prepareStatsModal(); // Recargar todo el modal
-};
-
-// Variables globales para la simulación de estadísticas
-let lastStatConfigs = [];
-let lastStatRecords = [];
-
-window.calculateAndRenderStatistics = async () => {
-    const modal = document.getElementById('modalManageShedAnimals');
-    const farm = modal.dataset.farm;
-    const shed = modal.dataset.number;
-    const animalName = modal.querySelector('#shedAnimalLabel span')?.textContent;
-    const container = document.getElementById('statsResultContainer');
-
-    const dateStart = document.getElementById('statsDateStart').value;
-    const dateEnd = document.getElementById('statsDateEnd').value;
-
-    if (!dateStart || !dateEnd) {
-        return showToast("Debe seleccionar una fecha de inicio y fin.", "error");
-    }
-
-    container.innerHTML = `<p style="text-align:center; color: #b2bec3;">Calculando resultados...</p>`;
-
-    // 1. Obtener las configuraciones de estadísticas para este animal
-    const { data: configs, error: configError } = await _supabase.from('animal_statistics_config').select('*, id').eq('animal_name', animalName);
-    if (configError) return container.innerHTML = `<p class="error-msg">Error al cargar configuraciones.</p>`;
-    if (!configs || configs.length === 0) return container.innerHTML = `<p style="text-align:center; color: #b2bec3;">No hay parámetros configurados para este animal.</p>`;
-    
-    lastStatConfigs = configs; // Guardar para recálculo
-    
-    // 2. Obtener los lotes activos para este galpón
-    const { data: batches } = await _supabase.from('animal_batches').select('id').eq('farm_name', farm).eq('shed_number', shed);
-    const batchIds = (batches || []).map(b => b.id);
-    if (batchIds.length === 0) return container.innerHTML = `<p style="text-align:center; color: #b2bec3;">No hay lotes en este galpón.</p>`;
-
-    // 3. Obtener todos los registros de producción para esos lotes en el rango de fechas
-    const { data: records, error: recordsError } = await _supabase
-        .from('animal_production_records')
-        .select('event_type, dynamic_data, initial_weight, created_at')
-        .in('batch_id', batchIds)
-        .gte('created_at', `${dateStart}T00:00:00`)
-        .lte('created_at', `${dateEnd}T23:59:59`);
-    
-    if (recordsError) return container.innerHTML = `<p class="error-msg">Error al cargar registros de producción.</p>`;
-    
-    lastStatRecords = records; // Guardar para recálculo
-
-    // 4. Calcular estadísticas con resolución de dependencias
-    const calculatedResults = new Map();
-    let unresolvedConfigs = [...configs];
-    let resolvedInThisPass = true;
-
-    while (unresolvedConfigs.length > 0 && resolvedInThisPass) {
-        resolvedInThisPass = false;
-        const stillUnresolved = [];
-
-        for (const config of unresolvedConfigs) {
-            const getOperandValue = (field, source, isStat) => {
-                if (isStat) {
-                    return calculatedResults.has(field) ? { value: calculatedResults.get(field).value, resolved: true } : { resolved: false };
-                }
-                if (source === 'manual') {
-                    return { value: 1, resolved: true }; // Valor inicial por defecto para simulación
-                }
-                // Sumar los valores de todos los registros que coincidan
-                const value = records.reduce((sum, rec) => {
-                    if (rec.event_type === source) {
-                        const val = rec.dynamic_data[field] !== undefined ? rec.dynamic_data[field] : (field === 'Peso Inicial' ? rec.initial_weight : 0);
-                        return sum + (parseFloat(val) || 0);
-                    }
-                    return sum;
-                }, 0);
-                return { value, resolved: true };
-            };
-
-            const op1 = getOperandValue(config.operand1_field, config.operand1_source, config.operand1_is_stat);
-            const op2 = getOperandValue(config.operand2_field, config.operand2_source, config.operand2_is_stat);
-
-            if (op1.resolved && op2.resolved) {
-                const val1 = op1.value;
-                const val2 = op2.value;
-                let result = 0;
-                switch (config.operation) {
-                    case 'sum': result = val1 + val2; break;
-                    case 'sub': result = val1 - val2; break; // CORREGIDO: val1 - val2
-                    case 'div': result = val2 !== 0 ? val1 / val2 : 0; break;
-                }
-                calculatedResults.set(config.statistic_name, { id: config.id, value: result, format: config.display_format });
-                resolvedInThisPass = true;
-            } else {
-                stillUnresolved.push(config);
-            }
-        }
-        unresolvedConfigs = stillUnresolved;
-    }
-
-    if (unresolvedConfigs.length > 0) {
-        console.error("Circular dependency or unresolved stats:", unresolvedConfigs.map(c => c.statistic_name));
-        container.innerHTML = `<p class="error-msg">Error: Se detectó una dependencia circular en los parámetros.</p>`;
-        return;
-    }
-
-    // 5. Renderizar los resultados
-    if (calculatedResults.size === 0) {
-        container.innerHTML = `<p style="text-align:center; color: #b2bec3;">No se encontraron datos en el período seleccionado para calcular los parámetros.</p>`;
-        return;
-    }
-
-    container.innerHTML = `
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">
-            ${Array.from(calculatedResults.entries()).map(([name, res]) => {
-                const config = lastStatConfigs.find(c => c.id === res.id);
-                const isManual = config.operand2_source === 'manual';
-
-                let displayValue;
-                if (res.format === 'percent') {
-                    displayValue = `${(res.value * 100).toFixed(2)} %`;
-                } else {
-                    displayValue = formatNumber(Number(res.value).toFixed(2));
-                }
-
-                return `
-                <div id="stat-card-${res.id}" style="background: white; border: 1px solid #dfe6e9; border-radius: 8px; padding: 15px; text-align: center; display: flex; flex-direction: column; justify-content: space-between;">
-                    <div style="font-size: 13px; color: #636e72; margin-bottom: 8px; font-weight: bold;">${name}</div>
-                    <div id="stat-value-${res.id}" style="font-size: 22px; color: #00b894; font-weight: 700; margin: 10px 0;">${displayValue}</div>
-                    ${isManual ? `
-                        <div class="input-group" style="margin: 10px 0 0 0;">
-                            <input type="number" 
-                                   id="manual-input-${res.id}"
-                                   oninput="recalculateSingleStat(${res.id}, this.value)"
-                                   placeholder="Simular valor"
-                                   value="1"
-                                   step="any"
-                                   style="text-align: center; font-size: 12px; padding: 5px; border: 1px solid #0984e3; background: #f0f8ff;">
-                        </div>
-                    ` : ''}
-                </div>
-                `;
-            }).join('')}
-        </div>
-    `;
-};
-
-window.recalculateSingleStat = (statId, manualValue) => {
-    // Recalcular TODAS las estadísticas para manejar dependencias en cadena
-    const manualInputs = new Map();
-    // Recopilar todos los valores manuales actuales de la UI
-    lastStatConfigs.forEach(config => {
-        if (config.operand2_source === 'manual') {
-            const inputEl = document.getElementById(`manual-input-${config.id}`);
-            manualInputs.set(config.statistic_name, parseFloat(inputEl?.value) || 0);
-        }
-    });
-    // Sobrescribir el valor que acaba de cambiar
-    const changedConfig = lastStatConfigs.find(c => c.id === statId);
-    if (changedConfig) {
-        manualInputs.set(changedConfig.statistic_name, parseFloat(manualValue) || 0);
-    }
-
-    const calculatedResults = new Map();
-    let unresolvedConfigs = [...lastStatConfigs];
-    let resolvedInThisPass = true;
-
-    while (unresolvedConfigs.length > 0 && resolvedInThisPass) {
-        resolvedInThisPass = false;
-        const stillUnresolved = [];
-
-        for (const config of unresolvedConfigs) {
-            const getOperandValue = (field, source, isStat) => {
-                if (isStat) return calculatedResults.has(field) ? { value: calculatedResults.get(field).value, resolved: true } : { resolved: false };
-                if (source === 'manual') return { value: manualInputs.get(config.statistic_name) ?? 1, resolved: true };
-                
-                const value = lastStatRecords.reduce((sum, rec) => {
-                    if (rec.event_type === source) {
-                        const val = rec.dynamic_data[field] !== undefined ? rec.dynamic_data[field] : (field === 'Peso Inicial' ? rec.initial_weight : 0);
-                        return sum + (parseFloat(val) || 0);
-                    }
-                    return sum;
-                }, 0);
-                return { value, resolved: true };
-            };
-
-            const op1 = getOperandValue(config.operand1_field, config.operand1_source, config.operand1_is_stat);
-            const op2 = getOperandValue(config.operand2_field, config.operand2_source, config.operand2_is_stat);
-
-            if (op1.resolved && op2.resolved) {
-                const val1 = op1.value;
-                const val2 = op2.value;
-                let result = 0;
-                switch (config.operation) {
-                    case 'sum': result = val1 + val2; break;
-                    case 'sub': result = val1 - val2; break; // CORREGIDO: val1 - val2
-                    case 'div': result = val2 !== 0 ? val1 / val2 : 0; break;
-                }
-                calculatedResults.set(config.statistic_name, { id: config.id, value: result, format: config.display_format });
-                resolvedInThisPass = true;
-            } else {
-                stillUnresolved.push(config);
-            }
-        }
-        unresolvedConfigs = stillUnresolved;
-    }
-
-    // Actualizar toda la UI con los nuevos valores recalculados
-    calculatedResults.forEach((res, name) => {
-        const valueEl = document.getElementById(`stat-value-${res.id}`);
-        if (valueEl) {
-            if (res.format === 'percent') {
-                valueEl.textContent = `${(res.value * 100).toFixed(2)} %`;
-            } else {
-                valueEl.textContent = formatNumber(Number(res.value).toFixed(2));
-            }
-        }
-    });
-};
