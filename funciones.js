@@ -1147,6 +1147,7 @@ document.getElementById('btnGestionGranjas').addEventListener('click', async () 
     }
 
     renderFarmsTable(data);
+    document.getElementById('welcomeMessage')?.classList.add('hidden');
 });
 
 function renderFarmsTable(farms) {
@@ -1673,8 +1674,6 @@ function renderShedsTable(data) {
         </table>`;
 }
 
-document.getElementById('btnGestionGranjas')?.addEventListener('click', () => {
-
 // Ingeniería de Sistemas: Restricción para que campos de identificación solo reciban números
 ['newCedula', 'updCedula', 'supNit'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', function() {
@@ -1724,9 +1723,6 @@ const setupAutoCalc = (unidId, amountId, selectId) => {
     });
 });
 document.getElementById('prodUnit')?.addEventListener('input', updateProductTotalProjection);
-
-    document.getElementById('welcomeMessage')?.classList.add('hidden');
-});
 
 /**
  * Ingeniería de Sistemas: Renderizado dinámico de la lista de categorías
