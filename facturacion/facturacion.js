@@ -356,20 +356,19 @@ async function loadInventoryForSales() {
     if (billingMode === 'venta') {
         const { data } = await _supabase
             .from('products')
-            .select('inventory_code, name, unit, medit, weigth')
+            .select('inventory_code, name, weigth')
             .eq('farm', selectedFarm)
             .eq('inventory', true);
         // Mapeo manual para asegurar la estructura de datos correcta
         inv = (data || []).map(item => {
             const weigthValues = item.weigth && typeof item.weigth === 'object'
-                ? Object.values(item.weigth).filter(v => typeof v === 'number')
+                ? Object.entries(item.weigth).filter(([,v]) => typeof v === 'number')
                 : [];
-            const amount = Math.max(item.unit || 0, ...weigthValues);
+            const amount = weigthValues.length > 0 ? Math.max(...weigthValues.map(([,v]) => v)) : 0;
             return {
                 code: item.inventory_code,
                 product: item.name,
                 amount,
-                medit: item.medit,
                 weigth: item.weigth // Objeto con pesos detallados para visualización
             };
         }).filter(i => i.amount > 0);
@@ -378,7 +377,7 @@ async function loadInventoryForSales() {
     // Obtención de información comercial de la tabla products
     const { data: prods, error: prodErr } = await _supabase
         .from('products')
-        .select('name, sale_price, buy_price, base_code, medit, animal, to_sale, weigth');
+        .select('name, sale_price, buy_price, base_code, animal, to_sale, weigth');
     
     if (!prodErr) {
         const priceMap = Object.fromEntries(prods.map(p => [p.name, p.sale_price]));
@@ -408,7 +407,6 @@ async function loadInventoryForSales() {
                     code: p.base_code,
                     product: p.name,
                     amount: 999999,
-                    medit: p.medit,
                     sale_price: p.sale_price,
                     buy_price: p.buy_price,
                     weigth: p.weigth
@@ -623,8 +621,7 @@ function renderInventorySales(items) {
                 .map(([key, value]) => `${formatNumber(value)} ${key}`)
                 .join(' / ');
         }
-        // Fallback si no hay `weigth`
-        return `${formatNumber(item.amount)} ${Array.isArray(item.medit) ? item.medit[0] : item.medit || ''}`;
+        return `${formatNumber(item.amount)}`;
     };
 
     const formatSalePrice = (item) => {
@@ -703,7 +700,7 @@ async function addToCart(code) {
                 pricingUnitDefault = spKeys[0];
             }
         } else if (typeof productPendingToCart.sale_price === 'number') {
-            pricingUnitDefault = weigthKeys[0] || (Array.isArray(prod.medit) ? prod.medit[0] : prod.medit) || 'Unidad';
+            pricingUnitDefault = weigthKeys[0] || 'Unidad';
             salePriceInfo = { [pricingUnitDefault]: productPendingToCart.sale_price };
         }
     }
@@ -775,7 +772,7 @@ async function addToCart(code) {
         if (singleQtyLabel) singleQtyLabel.classList.remove('hidden');
         if (singleQtyInput) singleQtyInput.classList.remove('hidden');
         
-        const defaultMedit = pricingUnitDefault || (Array.isArray(prod.medit) ? prod.medit[0] : prod.medit) || 'Unidad';
+        const defaultMedit = pricingUnitDefault || 'Unidad';
         singleQtyLabel.textContent = isVenta ? `Cantidad a vender (${defaultMedit}):` : `Cantidad a comprar (${defaultMedit}):`;
         
         document.getElementById('qtyProductInfo').innerHTML = `
@@ -1088,7 +1085,7 @@ async function liquidarVenta() {
             for (const item of cart) {
                 const { data: invItem, error: invQueryErr } = await _supabase
                     .from('products')
-                    .select('id, unit, weigth')
+                    .select('id, weigth')
                     .eq('inventory_code', item.code)
                     .eq('inventory', true)
                     .maybeSingle();
@@ -1103,11 +1100,9 @@ async function liquidarVenta() {
                     newWeigth[medit] = Math.max(0, (newWeigth[medit] || 0) - qty);
                 });
 
-                const newUnit = Object.values(newWeigth)[0] || 0;
-
                 const { error: updInvErr } = await _supabase
                     .from('products')
-                    .update({ unit: newUnit, weigth: newWeigth })
+                    .update({ weigth: newWeigth })
                     .eq('id', invItem.id);
 
                 if (updInvErr) {

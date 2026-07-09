@@ -176,3 +176,23 @@ WITH CHECK (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role =
 CREATE POLICY "Permitir eliminación de bultos a Admins y Devs"
 ON public.animal_production_bultos FOR DELETE TO authenticated
 USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND (role = 'Administrador' OR role = 'Desarrollador')));
+
+-- ==========================================================
+-- CONVERTIR 'amount' DE movements A JSONB (igual que products.weigth)
+-- Conserva los registros numéricos legacy empaquetándolos en { medida: valor }
+-- Es idempotente: solo convierte si la columna aún no es JSON/JSONB.
+-- ==========================================================
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'movements' AND column_name = 'amount'
+      AND data_type NOT IN ('json', 'jsonb')
+  ) THEN
+    ALTER TABLE movements ALTER COLUMN amount TYPE jsonb
+    USING CASE
+      WHEN amount IS NULL THEN '{}'::jsonb
+      ELSE jsonb_build_object(COALESCE(NULLIF(medit, ''), 'Unidad'), amount)
+    END;
+  END IF;
+END $$;

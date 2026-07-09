@@ -313,18 +313,14 @@ async function initWorkspace(role) {
     }
 
     if (role === 'Usuario') {
-        // Restricción de Navegación: Ocultar módulos administrativos
         document.getElementById('btnGestionUsuarios').classList.add('hidden');
         document.getElementById('btnGestionGranjas').classList.add('hidden');
-        document.getElementById('btnGestionProveedores').classList.add('hidden');
         document.getElementById('btnGestionProductos').classList.add('hidden');
 
-        // Restricción de Inventario: Ocultar botones de configuración y reportes (Kardex y Galpones)
         const invActions = document.querySelector('#inventoryView .action-bar').children;
-        if (invActions[3]) invActions[3].classList.add('hidden'); // Registrar Galpón
-        if (invActions[6]) invActions[6].classList.add('hidden'); // Kardex
+        if (invActions[3]) invActions[3].classList.add('hidden');
+        if (invActions[6]) invActions[6].classList.add('hidden');
 
-        // Activación automática de la vista de inventario
         renderProductsView();
     } else {
         await checkProvinceData();
@@ -420,8 +416,8 @@ function showModal(id) {
 
     if(id === 'modalCreateUser') prepareRoleDropdown();
     if(id === 'modalUpdateData') prepareUpdateFields();
-    if(id === 'modalCreateSupplier') loadProductsForSelect();
     if(id === 'modalInboundInventory') prepareInboundModal();
+    if(id === 'modalCreateProduct') prepareProviderSelect();
     if(id === 'modalOutboundInventory') prepareOutboundModal();
     if(id === 'modalListCategories') renderCategoriesList();
     if(id === 'modalBaseProducts') renderBaseProducts();
@@ -588,9 +584,8 @@ document.getElementById('btnGestionUsuarios').addEventListener('click', async ()
     document.getElementById('welcomeMessage')?.classList.add('hidden');
     const usersView = document.getElementById('usersView');
     document.getElementById('farmsView')?.classList.add('hidden');
-    document.getElementById('suppliersView')?.classList.add('hidden');
     document.getElementById('productsView')?.classList.add('hidden');
-    document.getElementById('inventoryView')?.classList.add('hidden'); // Vista de Galpones
+    document.getElementById('inventoryView')?.classList.add('hidden');
     usersView.classList.remove('hidden');
     
     const tableContainer = document.getElementById('tableContainer');
@@ -749,8 +744,8 @@ async function prepareInboundModal() {
     extraFields.classList.add('hidden');
     
     // Cargar tanto definiciones (inventory=false) como productos existentes en inventario (inventory=true)
-    const { data: baseProds } = await _supabase.from('products').select('name, unit, medit, base_code, animal, weigth').eq('inventory', false).order('name');
-    const { data: invProds } = await _supabase.from('products').select('name, unit, medit, base_code, animal, weigth').eq('inventory', true).order('name');
+    const { data: baseProds } = await _supabase.from('products').select('name, base_code, animal, weigth').eq('inventory', false).order('name');
+    const { data: invProds } = await _supabase.from('products').select('name, base_code, animal, weigth').eq('inventory', true).order('name');
 
     const allProds = [
         ...(baseProds || []).map(p => ({ ...p, type: 'base' })),
@@ -762,17 +757,12 @@ async function prepareInboundModal() {
     
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>' + 
         uniqueProds.map(p => `
-            <option value="${p.name}" data-unit='${JSON.stringify(p.unit)}' data-medit='${JSON.stringify(p.medit)}' data-code="${p.base_code}" data-animal="${p.animal}" data-weigth='${JSON.stringify(p.weigth || null)}'>
+            <option value="${p.name}" data-code="${p.base_code}" data-animal="${p.animal}" data-weigth='${JSON.stringify(p.weigth || null)}'>
                 ${p.name}
             </option>`).join('');
 
     const { data: farms } = await _supabase.from('farms').select('name').order('name');
     const farmSelect = document.getElementById('inboundFarm');
-    const provSelect = document.getElementById('inboundProvider');
-
-    if (provSelect) {
-        provSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione el proveedor</option>';
-    }
 
     if (farmSelect) {
         farmSelect.innerHTML = '<option value="" disabled selected hidden>Seleccionar granja...</option>' + 
@@ -798,7 +788,6 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
 
     const productName = selected.value;
     const weigthData = JSON.parse(selected.getAttribute('data-weigth') || 'null');
-    const meditData = JSON.parse(selected.getAttribute('data-medit') || '[]');
     const isAnimal = selected.getAttribute('data-animal') === 'true';
 
     if (weigthData && typeof weigthData === 'object' && Object.keys(weigthData).length > 0) {
@@ -828,8 +817,8 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
     } else {
         inboundUnitsContainer.innerHTML = `
             <div style="flex: 1;">
-                <label style="font-size: 12px; color: #636e72;">Unidades (${meditData[0] || 'N/A'}):</label>
-                <input type="text" class="inbound-unid-input" data-medit="${meditData[0] || ''}" data-base-stock="0" placeholder="0" style="width: 100%;">
+                <label style="font-size: 12px; color: #636e72;">Unidades:</label>
+                <input type="text" class="inbound-unid-input" data-medit="Unidad" data-base-stock="0" placeholder="0" style="width: 100%;">
                 <div class="inbound-stock-not-available" style="font-size: 11px; color: #d63031;">Producto base sin stock detallado por medidas</div>
             </div>
         `;
@@ -841,15 +830,6 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
 
     const farmSelect = document.getElementById('inboundFarm');
     if (farmSelect) farmSelect.value = "";
-
-    const { data: provs } = await _supabase.from('providers').select('name, product');
-    const availableProvs = provs.filter(p => 
-        Array.isArray(p.product) && p.product.some(prod => prod.toLowerCase() === productName.toLowerCase())
-    );
-
-    const provSelect = document.getElementById('inboundProvider');
-    provSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione el proveedor</option>' + 
-        availableProvs.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
 });
 
 document.getElementById('inboundToShed')?.addEventListener('change', async function() {
@@ -900,7 +880,6 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
     const baseCode = selectedOption.dataset.code;
     const farmName = document.getElementById('inboundFarm').value;
     const entranceDate = document.getElementById('inboundDate').value;
-    const providerName = document.getElementById('inboundProvider').value;
     const description = document.getElementById('inboundDescription').value;
     const shedValue = document.getElementById('inboundShed').value || document.getElementById('inboundShedSelect')?.value || null;
 
@@ -934,18 +913,17 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
         return;
     }
 
-    const movements = Object.entries(weigthData).filter(([,v]) => v > 0).map(([medit, amount]) => ({
+    const movements = [{
         name: productName,
         type: "ingreso",
-        amount: amount,
-        medit: medit,
+        amount: weigthData,
         farm: farmName,
         shed: shedValue || null,
         date_movement: entranceDate,
-        provider: providerName || "",
+        provider: "",
         description: description,
         created_at: getColombiaTimestamp()
-    }));
+    }];
 
     const { error: moveError } = await _supabase.from('movements').insert(movements);
     if (moveError) {
@@ -955,7 +933,7 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
 
     let { data: currentProd, error: currentProdError } = await _supabase
         .from('products')
-        .select('id, unit, provider, weigth, shed')
+        .select('id, provider, weigth, shed')
         .eq('base_code', baseCode)
         .eq('farm', farmName)
         .eq('inventory', true)
@@ -963,7 +941,6 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
 
     let updateError;
     if (!currentProd) {
-        const newUnit = Object.values(weigthData)[0] || 0;
         const shedJson = shedValue ? { [String(shedValue)]: { ...weigthData } } : {};
         const { error: insErr } = await _supabase.from('products').insert([{
             base_code: pData.base_code,
@@ -977,9 +954,9 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
             inventory: true,
             farm: farmName,
             shed: shedJson,
-            unit: newUnit,
+            unit: 0,
             weigth: weigthData,
-            provider: providerName ? [providerName] : [],
+            provider: [],
             entrance_date: entranceDate,
             created_at: getColombiaTimestamp()
         }]);
@@ -1000,14 +977,10 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
         }
 
         let providersArray = Array.isArray(currentProd.provider) ? currentProd.provider : [];
-        if (providerName && !providersArray.includes(providerName)) {
-            providersArray.push(providerName);
-        }
 
         const { error: updErr } = await _supabase
             .from('products')
             .update({ 
-                unit: Object.values(newWeigth)[0] || 0,
                 weigth: newWeigth, 
                 shed: shedJson,
                 provider: providersArray, entrance_date: entranceDate })
@@ -1018,8 +991,11 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
     if (updateError) {
         showToast("Error al actualizar existencias: " + updateError.message, "error");
     } else {
-        const newBaseUnit = Object.values(newBaseWeigth)[0] || 0;
-        await _supabase.from('products').update({ unit: newBaseUnit, weigth: newBaseWeigth }).eq('base_code', baseCode).eq('inventory', false);
+        const newBaseWeigth = { ...(pData.weigth || {}) };
+        Object.entries(weigthData).forEach(([medit, value]) => {
+            newBaseWeigth[medit] = Math.max(0, (newBaseWeigth[medit] || 0) - value);
+        });
+        await _supabase.from('products').update({ weigth: newBaseWeigth }).eq('base_code', baseCode).eq('inventory', false);
 
         showToast("Ingreso de inventario procesado correctamente");
         e.target.reset();
@@ -1060,12 +1036,12 @@ async function prepareOutboundModal() {
     // Carga de productos desde la tabla products (que ahora es el inventario)
     const { data: productsInfo } = await _supabase
         .from('products')
-        .select('id, name, unit, medit, farm, weigth, shed')
+        .select('id, name, farm, weigth, shed')
         .eq('inventory', true)
         .order('name');
     
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>' + 
-        (productsInfo || []).map(p => `<option value="${p.id}" data-unit='${JSON.stringify(p.unit)}' data-medit='${JSON.stringify(p.medit)}' data-name="${p.name}" data-farm="${p.farm}" data-weigth='${JSON.stringify(p.weigth || null)}' data-shed='${encodeURIComponent(JSON.stringify(p.shed || {}))}'>${p.name}</option>`).join('');
+        (productsInfo || []).map(p => `<option value="${p.id}" data-name="${p.name}" data-farm="${p.farm}" data-weigth='${JSON.stringify(p.weigth || null)}' data-shed='${encodeURIComponent(JSON.stringify(p.shed || {}))}'>${p.name}</option>`).join('');
 }
 
 document.getElementById('outboundProduct')?.addEventListener('change', function() {
@@ -1131,14 +1107,12 @@ function renderOutboundStock(shedStock, weigthData, selectedOption) {
             </div>
         `).join('');
     } else {
-        const stock = parseFloat(selectedOption.dataset.unit || '0');
-        const medit = JSON.parse(selectedOption.dataset.medit || '[]')[0] || 'N/A';
         outboundUnitsContainer.innerHTML = `
             <div style="flex: 1;">
-                <label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label>
-                <input type="text" class="outbound-unid-input" data-medit="${medit}" placeholder="0" data-max="${stock}" style="width: 100%;">
+                <label style="font-size: 12px; color: #636e72;">Unidades:</label>
+                <input type="text" class="outbound-unid-input" data-medit="Unidad" placeholder="0" data-max="0" style="width: 100%;">
                 <div style="font-size: 11px; color: #636e72;">
-                    Disp: ${formatNumber(stock)} | Saliendo: <span class="outbound-exit-amount" data-medit="${medit}">0</span> | Quedará: <span class="outbound-remaining" data-medit="${medit}">${formatNumber(stock)}</span>
+                    Disp: 0 | Saliendo: <span class="outbound-exit-amount" data-medit="Unidad">0</span> | Quedará: <span class="outbound-remaining" data-medit="Unidad">0</span>
                 </div>
             </div>
         `;
@@ -1241,22 +1215,17 @@ document.getElementById('formOutboundInventory')?.addEventListener('submit', asy
     }
 
     const { error: updateError } = await _supabase.from('products').update({ 
-        unit: Object.values(newWeigth)[0] || 0,
         weigth: newWeigth,
         shed: shedJson,
         description: description 
     }).eq('id', productId);
 
-    // Registrar movimiento en Kardex por cada medida afectada
-    for (const [medit, value] of Object.entries(weigthData)) {
-        if (value > 0) {
-            await _supabase.from('movements').insert([{
-                name: productName, type: "salida", amount: value, farm: farmName,
-                shed: shedValue, medit: medit, date_movement: moveDate, provider: "",
-                description: description, created_at: getColombiaTimestamp()
-            }]);
-        }
-    }
+    // Registrar movimiento en Kardex con el detalle de medidas en el JSONB amount
+    await _supabase.from('movements').insert([{
+        name: productName, type: "salida", amount: weigthData, farm: farmName,
+        shed: shedValue, date_movement: moveDate, provider: "",
+        description: description, created_at: getColombiaTimestamp()
+    }]);
     
     if (updateError) {
         showToast("Error al actualizar existencias: " + updateError.message, "error");
@@ -1302,9 +1271,8 @@ document.getElementById('formCreateFarm')?.addEventListener('submit', async (e) 
 
 // FASE 4.1: Ingeniería de Backend y Frontend para Gestión de Granjas
 document.getElementById('btnGestionGranjas').addEventListener('click', async () => {
-    // Gestión de Interfaz: Conmutación de vistas
+    document.getElementById('welcomeMessage')?.classList.add('hidden');
     document.getElementById('usersView').classList.add('hidden');
-    document.getElementById('suppliersView').classList.add('hidden');
     document.getElementById('productsView')?.classList.add('hidden');
     document.getElementById('inventoryView')?.classList.add('hidden');
     const farmsView = document.getElementById('farmsView');
@@ -1313,7 +1281,6 @@ document.getElementById('btnGestionGranjas').addEventListener('click', async () 
     const tableContainer = document.getElementById('farmsTableContainer');
     tableContainer.innerHTML = "<p style='padding:20px;'>Cargando datos de granjas...</p>";
 
-    // Consulta a la tabla 'farms'
     const { data, error } = await _supabase
         .from('farms')
         .select('name, address, animals');
@@ -1325,7 +1292,6 @@ document.getElementById('btnGestionGranjas').addEventListener('click', async () 
     }
 
     renderFarmsTable(data);
-    document.getElementById('welcomeMessage')?.classList.add('hidden');
 });
 
 function renderFarmsTable(farms) {
@@ -1361,28 +1327,7 @@ function renderFarmsTable(farms) {
     tableContainer.innerHTML = html;
 }
 
-// FASE 5.1: Ingeniería de Backend y Frontend para Gestión de Proveedores
-async function loadProductsForSelect() {
-    // Carga dinámica desde la tabla 'products' columna 'name'
-    const { data, error } = await _supabase.from('products').select('name');
-    const select = document.getElementById('supProducts');
-    if (error) {
-        console.error("Error al cargar productos:", error);
-        return;
-    }
-    select.innerHTML = data?.map(p => `<option value="${p.name}">${p.name}</option>`).join('') || '<option value="">Sin productos disponibles</option>';
-}
-
-document.getElementById('btnGestionProveedores')?.addEventListener('click', async () => {
-    document.getElementById('welcomeMessage')?.classList.add('hidden');
-    // Gestión de Interfaz: Conmutación de vistas
-    document.getElementById('usersView').classList.add('hidden');
-    document.getElementById('farmsView').classList.add('hidden');
-    document.getElementById('productsView').classList.add('hidden');
-    document.getElementById('inventoryView')?.classList.add('hidden');
-    const suppliersView = document.getElementById('suppliersView');
-    suppliersView.classList.remove('hidden');
-    
+window.showSuppliersModal = async () => {
     const tableContainer = document.getElementById('suppliersTableContainer');
     tableContainer.innerHTML = "<p style='padding:20px;'>Cargando proveedores...</p>";
 
@@ -1397,7 +1342,10 @@ document.getElementById('btnGestionProveedores')?.addEventListener('click', asyn
     }
 
     renderSuppliersTable(data);
-});
+    await showModal('suppliersModal');
+};
+
+
 
 function renderSuppliersTable(providers) {
     const tableContainer = document.getElementById('suppliersTableContainer');
@@ -1434,12 +1382,13 @@ document.getElementById('formCreateSupplier')?.addEventListener('submit', async 
     e.preventDefault();
     const form = e.target;
     const isEdit = form.dataset.mode === 'edit';
-    const selectedProducts = Array.from(document.getElementById('supProducts').selectedOptions).map(opt => opt.value);
+    const rawProducts = document.getElementById('supProducts').value;
+    const products = rawProducts.split(',').map(p => p.trim()).filter(p => p.length > 0);
 
     const supplierData = {
         name: document.getElementById('supName').value,
         nit: document.getElementById('supNit').value,
-        product: selectedProducts
+        product: products
     };
 
     let result;
@@ -1456,7 +1405,7 @@ document.getElementById('formCreateSupplier')?.addEventListener('submit', async 
     else { 
         showToast(isEdit ? "Proveedor actualizado" : "Proveedor registrado exitosamente"); 
         closeModals(); 
-        document.getElementById('btnGestionProveedores').click(); 
+        await showSuppliersModal(); 
     }
 });
 
@@ -1479,7 +1428,7 @@ function renderProductsTable(products) {
                 .map(([key, value]) => `${formatNumber(value)} ${key}`)
                 .join(', ');
         }
-        return `${formatNumber(p.unit)} ${Array.isArray(p.medit) ? p.medit.join(', ') : p.medit}`;
+        return '0';
     };
 
     let html = `
@@ -1531,7 +1480,7 @@ async function renderBaseProducts() {
                 .map(([key, value]) => `${formatNumber(value)} ${key}`)
                 .join(', ');
         }
-        return `${formatNumber(p.unit)} ${Array.isArray(p.medit) ? p.medit.join(', ') : p.medit}`;
+        return '0';
     };
 
     let html = `
@@ -1617,6 +1566,15 @@ document.getElementById('prodHasWeight')?.addEventListener('change', (e) => {
     updateSalePriceVisibility();
 });
 
+async function prepareProviderSelect() {
+    const select = document.getElementById('prodProvider');
+    if (!select) return;
+    const { data, error } = await _supabase.from('providers').select('name').order('name');
+    if (error) return;
+    select.innerHTML = '<option value="" disabled selected hidden>Seleccione el proveedor</option>' +
+        (data?.map(p => `<option value="${p.name}">${p.name}</option>`).join('') || '');
+}
+
 document.getElementById('formCreateProduct')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
@@ -1625,8 +1583,8 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
     const buyPrice = parseInt(document.getElementById('prodBuyPrice').value.replace(/\./g, '')) || 0;
     const hasWeight = document.getElementById('prodHasWeight')?.checked;
     const toSale = document.getElementById('prodForSale')?.checked !== false;
+    const provider = document.getElementById('prodProvider')?.value || "";
 
-    // Ingeniería de Datos: Validación para prevenir duplicados de productos base
     if (!isEdit) {
         const baseCode = document.getElementById('prodCode').value;
         const { data: existing, error: checkError } = await _supabase
@@ -1640,14 +1598,14 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
         if (existing) return showToast(`Error: Ya existe una definición de producto con el código ${baseCode}.`, "error");
     }
 
-
     let productData = {
         base_code: document.getElementById('prodCode').value,
         name: document.getElementById('prodName').value,
         buy_price: buyPrice,
         total: unit * buyPrice,
         animal: false,
-        to_sale: toSale
+        to_sale: toSale,
+        provider: provider ? [provider] : []
     };
 
     // FASE 11: Lógica para guardar precios de venta en JSONB
@@ -1803,10 +1761,9 @@ document.getElementById('btnGestionInventario')?.addEventListener('click', () =>
 });
 
 async function renderInventoryView(mode) {
-    // Gestión de Interfaz: Conmutación de vistas
+    document.getElementById('welcomeMessage')?.classList.add('hidden');
     document.getElementById('usersView').classList.add('hidden');
     document.getElementById('farmsView').classList.add('hidden');
-    document.getElementById('suppliersView').classList.add('hidden');
     document.getElementById('productsView').classList.add('hidden');
     const inventoryView = document.getElementById('inventoryView');
     inventoryView.classList.remove('hidden');
@@ -1976,7 +1933,6 @@ window.editSupplier = async (nit) => {
     const { data, error } = await _supabase.from('providers').select('*').eq('nit', nit).single();
     if (error || !data) return showToast("Error al cargar datos del proveedor", "error");
 
-    await loadProductsForSelect();
     const form = document.getElementById('formCreateSupplier');
     form.dataset.mode = 'edit';
     form.dataset.originalId = nit;
@@ -1986,16 +1942,16 @@ window.editSupplier = async (nit) => {
 
     document.getElementById('supName').value = data.name;
     document.getElementById('supNit').value = data.nit;
-    const select = document.getElementById('supProducts');
+    const productInput = document.getElementById('supProducts');
     const products = Array.isArray(data.product) ? data.product : [];
-    Array.from(select.options).forEach(opt => opt.selected = products.includes(opt.value));
+    productInput.value = products.join(', ');
 };
 
 window.deleteSupplier = async (nit) => {
     if (!confirm(`¿Está seguro de eliminar al proveedor con NIT ${nit}?`)) return;
     const { error } = await _supabase.from('providers').delete().eq('nit', nit);
     if (error) showToast("Error: " + error.message, "error");
-    else { showToast("Proveedor eliminado"); document.getElementById('btnGestionProveedores').click(); }
+    else { showToast("Proveedor eliminado"); await showSuppliersModal(); }
 };
 
 window.editProduct = async (code) => {
@@ -2047,6 +2003,12 @@ window.editProduct = async (code) => {
     }
 
     document.getElementById('prodCode').value = data.base_code;
+    await prepareProviderSelect();
+    const providerSelect = document.getElementById('prodProvider');
+    if (providerSelect) {
+        const providerArray = Array.isArray(data.provider) ? data.provider : [];
+        providerSelect.value = providerArray[0] || "";
+    }
     updateProductTotalProjection();
 };
 
@@ -3063,9 +3025,8 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
     const { data: mvData, error: mvError } = await _supabase.from('movements').insert([{
         name: productName,
         type: isEdit ? "edicion_ingreso_animal" : "ingreso_animal",
-        amount: units,
+        amount: { 'KG': units },
         farm: farm,
-        medit: "KG",
         shed: String(shedNumber),
         description: `Ingreso procesado en Galpón ${shedNumber}. Campos dinámicos validados de producción.`,
         production_data: productionData,
@@ -3091,9 +3052,8 @@ document.getElementById('formInboundAnimal')?.addEventListener('submit', async (
             await _supabase.from('movements').insert({
                 name: label,
                 type: isEdit ? "edicion_ingreso_animal" : "ingreso_animal",
-                amount: numValue,
+                amount: { 'KG': numValue },
                 farm: farm,
-                medit: "KG",
                 shed: String(shedNumber),
                 description: desc,
                 production_data: { [label]: numValue, ...(bultos > 0 ? { bultos } : {}) },
@@ -3366,9 +3326,8 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
     const { data: mvOut, error: mvOutErr } = await _supabase.from('movements').insert([{
         name: productName,
         type: 'salida_animal',
-        amount: units,
+        amount: { 'KG': units },
         farm: farm,
-        medit: 'KG',
         shed: String(shedNumber),
         description: `Salida procesada en Galpón ${shedNumber}`,
         production_data: productionData,
@@ -3394,9 +3353,8 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
             await _supabase.from('movements').insert({
                 name: label,
                 type: 'salida_animal',
-                amount: numValue,
+                amount: { 'KG': numValue },
                 farm: farm,
-                medit: 'KG',
                 shed: String(shedNumber),
                 description: desc,
                 production_data: { [label]: numValue, ...(bultos > 0 ? { bultos } : {}) },

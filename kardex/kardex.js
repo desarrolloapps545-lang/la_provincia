@@ -7,6 +7,20 @@ const formatNumber = (num) => {
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 };
 
+// Normaliza el amount (JSONB) a un objeto { medida: valor }
+const normalizeAmount = (amount) => {
+    if (amount && typeof amount === 'object') return amount;
+    return { 'Unidad': (typeof amount === 'number' ? amount : 0) };
+};
+
+// Formatea un objeto amount JSONB como "100 kg, 5 unidad"
+const formatAmountJsonb = (obj) => {
+    if (!obj || typeof obj !== 'object') return '-';
+    const entries = Object.entries(obj).filter(([, v]) => (v || 0) !== 0);
+    if (entries.length === 0) return '-';
+    return entries.map(([k, v]) => `${formatNumber(v)} ${k}`).join(', ');
+};
+
 // Ingeniería de Frontend: Helper para Toasts
 const showToast = (message, type = 'success') => {
     const container = document.getElementById('toastContainer');
@@ -115,7 +129,7 @@ async function loadMovements(productName, farmName) {
         return;
     }
 
-    let saldoAcumulado = 0;
+    const saldoPorMedida = {};
     let html = '';
 
     const formatDate = (dateStr) => {
@@ -127,15 +141,19 @@ async function loadMovements(productName, farmName) {
     };
 
     movements.forEach(m => {
-        const esIngreso = m.type.toLowerCase() === 'ingreso';
-        const cantidad = m.amount || 0;
+        const esIngreso = m.type.toLowerCase() === 'ingreso' || m.type.toLowerCase().includes('ingreso');
+        const amountObj = normalizeAmount(m.amount);
         const moveDate = formatDate(m.created_at || m.date_movement);
-        
-        if (esIngreso) {
-            saldoAcumulado += cantidad;
-        } else {
-            saldoAcumulado -= cantidad;
-        }
+
+        const entradaTxt = esIngreso ? formatAmountJsonb(amountObj) : '-';
+        const salidaTxt = !esIngreso ? formatAmountJsonb(amountObj) : '-';
+
+        Object.entries(amountObj).forEach(([medida, valor]) => {
+            if (!saldoPorMedida[medida]) saldoPorMedida[medida] = 0;
+            saldoPorMedida[medida] += esIngreso ? valor : -valor;
+        });
+
+        const saldoTxt = formatAmountJsonb(saldoPorMedida);
 
         html += `
             <tr>
@@ -143,9 +161,9 @@ async function loadMovements(productName, farmName) {
                 <td>${m.farm || 'N/A'}</td>
                 <td><span class="${esIngreso ? 'text-ingreso' : 'text-salida'}">${m.type.toUpperCase()}</span></td>
                 <td>${m.description || '-'}</td>
-                <td>${esIngreso ? formatNumber(cantidad) : '-'}</td>
-                <td>${!esIngreso ? formatNumber(cantidad) : '-'}</td>
-                <td class="text-saldo">${formatNumber(saldoAcumulado)}</td>
+                <td>${entradaTxt}</td>
+                <td>${salidaTxt}</td>
+                <td class="text-saldo">${saldoTxt}</td>
             </tr>
         `;
     });

@@ -46,8 +46,8 @@
                 <button id="btnGestionUsuarios" class="nav-btn">Gestión de Usuarios</button>
                 <button id="btnGestionGranjas" class="nav-btn">Centros de costos</button>
                 <button id="btnGestionProductos" class="nav-btn">Productos</button>
-                <button id="btnGestionProveedores" class="nav-btn">Proveedores</button> 
                 <button id="btnGestionInventario" class="nav-btn">Galpones</button>
+                <button id="btnInformes" class="nav-btn" style="background: #6c5ce7;" onclick="window.open('informes/informes.html', '_blank')">Informes</button>
                 <button id="btnFacturacion" class="nav-btn" style="background: #e17055;" onclick="window.open('facturacion/facturacion.html', '_blank')">Facturación</button>
             </div>
             <div style="display: flex; align-items: center; gap: 15px;">
@@ -78,19 +78,10 @@
                     <h3>Gestión de Granjas</h3>
                     <div class="action-bar">
                         <button class="action-btn" onclick="showModal('modalCreateFarm')">Registrar granja</button>
+                        <button class="action-btn" onclick="showSuppliersModal()">Proveedores</button>
                     </div>
                 </div>
                 <div id="farmsTableContainer" class="table-container"></div>
-            </section>
-
-            <section id="suppliersView" class="view-section hidden">
-                <div class="view-header">
-                    <h3>Gestión de Proveedores</h3>
-                    <div class="action-bar">
-                        <button class="action-btn" onclick="showModal('modalCreateSupplier')">Registrar proveedor</button>
-                    </div>
-                </div>
-                <div id="suppliersTableContainer" class="table-container"></div>
             </section>
 
             <section id="productsView" class="view-section hidden">
@@ -192,6 +183,16 @@
             </form>
         </div>
 
+        <!-- Proveedores (Centro de Costos) -->
+        <div id="suppliersModal" class="modal hidden" style="width: 900px; max-width: 95vw;">
+            <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
+            <h4>Proveedores</h4>
+            <div class="action-bar" style="justify-content: flex-end; margin-bottom: 15px;">
+                <button class="action-btn" onclick="showModal('modalCreateSupplier')">Registrar proveedor</button>
+            </div>
+            <div id="suppliersTableContainer" class="table-container" style="max-height: 60vh; overflow-y: auto;"></div>
+        </div>
+
         <!-- Registrar Proveedor (FASE 5.1) -->
         <div id="modalCreateSupplier" class="modal hidden">
             <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
@@ -199,8 +200,7 @@
             <form id="formCreateSupplier" autocomplete="off">
                 <input type="text" id="supName" placeholder="Nombre del proveedor" required>
                 <input type="number" id="supNit" placeholder="Nit" required>
-                <label style="font-size: 12px; color: #636e72; display: block; margin-bottom: 5px;">Productos (mantén Ctrl para seleccionar varios):</label>
-                <select id="supProducts" multiple required style="height: 100px;"></select>
+                <input type="text" id="supProducts" placeholder="Ej: Alimento, Vacunas, Medicamentos (separados por comas)" required>
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>
                     <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
@@ -253,6 +253,8 @@
                 <div style="margin-top: -10px; margin-bottom: 15px; font-size: 14px; font-weight: bold; color: #00b894;">
                     Costo Total Proyectado: <span id="prodTotalProjection">$ 0</span>
                 </div>
+                <label style="font-size: 12px; color: #636e72;">Proveedor:</label>
+                <select id="prodProvider"><option value="" disabled selected hidden>Seleccione el proveedor</option></select>
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>
                     <button type="button" class="btn-cancel" onclick="closeModals(false)">Cancelar</button>
@@ -331,8 +333,6 @@
 
                     <label style="font-size: 12px; color: #636e72;">Fecha de Entrada:</label>
                     <input type="date" id="inboundDate" required>
-                    <label style="font-size: 12px; color: #636e72;">Proveedor:</label>
-                    <select id="inboundProvider"><option value="" disabled selected hidden>Seleccione el proveedor</option></select>
                     <label style="font-size: 12px; color: #636e72;">Descripción / Justificación:</label>
                     <input type="text" id="inboundDescription" placeholder="Ej: Compra según factura #123">
                     

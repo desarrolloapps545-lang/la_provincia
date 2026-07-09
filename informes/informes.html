@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Informes - Granjas la provincia</title>
+    <link rel="stylesheet" href="../estilos.css">
+    <link rel="stylesheet" href="informes.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div id="informesWorkspace">
+        <nav class="status-bar">
+            <div style="display: flex; align-items: center;">
+                <div class="nav-brand">Informes v1.0</div>
+            </div>
+            <div class="nav-actions">
+                <button id="btnInformeGanancias" class="nav-btn" style="background: #00b894;">Ganancias</button>
+                <button id="btnInformeCompras" class="nav-btn" style="background: #0984e3;">Compras</button>
+                <button id="btnInformeVentas" class="nav-btn" style="background: #e17055;">Ventas</button>
+                <button id="btnInformePeso" class="nav-btn" style="background: #6c5ce7;">Peso Ent/Sal</button>
+                <button id="btnInformeUnidades" class="nav-btn" style="background: #fdcb6e; color: #2d3436;">Unidades Ent/Sal</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <button onclick="window.location.href='../index.html'" class="nav-btn btn-cancel" style="margin: 0; padding: 5px 12px; font-size: 12px;">Volver al Inicio</button>
+            </div>
+        </nav>
+
+        <main class="content-area">
+            <div id="welcomeInformes" style="text-align: center; margin-top: 100px; color: #636e72;">
+                <h3>Seleccione el informe que desea consultar</h3>
+            </div>
+
+            <section id="informeGananciasView" class="view-section hidden">
+                <div class="view-header">
+                    <h3>Informe de Ganancias</h3>
+                </div>
+                <div class="filter-section">
+                    <label>Desde:</label>
+                    <input type="date" id="gananciasDateStart">
+                    <label>Hasta:</label>
+                    <input type="date" id="gananciasDateEnd">
+                    <button class="action-btn" onclick="generarInformeGanancias()">Generar Informe</button>
+                </div>
+                <div id="gananciasResultContainer" class="table-container"></div>
+            </section>
+
+            <section id="informeComprasView" class="view-section hidden">
+                <div class="view-header">
+                    <h3>Informe de Compras</h3>
+                </div>
+                <div class="filter-section">
+                    <label>Desde:</label>
+                    <input type="date" id="comprasDateStart">
+                    <label>Hasta:</label>
+                    <input type="date" id="comprasDateEnd">
+                    <button class="action-btn" onclick="generarInformeCompras()">Generar Informe</button>
+                </div>
+                <div id="comprasResultContainer" class="table-container"></div>
+            </section>
+
+            <section id="informeVentasView" class="view-section hidden">
+                <div class="view-header">
+                    <h3>Informe de Ventas</h3>
+                </div>
+                <div class="filter-section">
+                    <label>Desde:</label>
+                    <input type="date" id="ventasDateStart">
+                    <label>Hasta:</label>
+                    <input type="date" id="ventasDateEnd">
+                    <button class="action-btn" onclick="generarInformeVentas()">Generar Informe</button>
+                </div>
+                <div id="ventasResultContainer" class="table-container"></div>
+            </section>
+
+            <section id="informePesoView" class="view-section hidden">
+                <div class="view-header">
+                    <h3>Informe de Peso de Entrada y Salida</h3>
+                </div>
+                <div class="filter-section">
+                    <label>Producto:</label>
+                    <select id="pesoProductSelect"><option value="">Cargando productos...</option></select>
+                    <label>Desde:</label>
+                    <input type="date" id="pesoDateStart">
+                    <label>Hasta:</label>
+                    <input type="date" id="pesoDateEnd">
+                    <button class="action-btn" onclick="generarInformePeso()">Generar Informe</button>
+                </div>
+                <div id="pesoResultContainer" class="table-container"></div>
+            </section>
+
+            <section id="informeUnidadesView" class="view-section hidden">
+                <div class="view-header">
+                    <h3>Informe de Unidades de Entrada y Salida</h3>
+                </div>
+                <div class="filter-section">
+                    <label>Producto:</label>
+                    <select id="unidadesProductSelect"><option value="">Cargando productos...</option></select>
+                    <label>Desde:</label>
+                    <input type="date" id="unidadesDateStart">
+                    <label>Hasta:</label>
+                    <input type="date" id="unidadesDateEnd">
+                    <button class="action-btn" onclick="generarInformeUnidades()">Generar Informe</button>
+                </div>
+                <div id="unidadesResultContainer" class="table-container"></div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toastContainer" class="toast-container"></div>
+    <script src="informes.js"></script>
+</body>
+</html>
