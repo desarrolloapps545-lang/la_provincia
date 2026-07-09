@@ -740,6 +740,40 @@ async function addToCart(code) {
             shedKeys.map(k => `<option value="${k}">${k}</option>`).join('');
         shedSelect.disabled = shedKeys.length === 1;
         if (shedKeys.length === 1) shedSelect.value = shedKeys[0];
+        
+        const updateStockForShed = () => {
+            const selectedShed = shedSelect.value;
+            const shedStock = selectedShed ? (prod.shed[selectedShed] || {}) : {};
+            const globalStock = prod.weigth || {};
+            
+            document.querySelectorAll('.sale-qty-input').forEach(input => {
+                const medit = input.dataset.medit;
+                const shedQty = shedStock[medit] || 0;
+                const globalQty = globalStock[medit] || 0;
+                const maxQty = selectedShed ? Math.min(shedQty, globalQty) : globalQty;
+                
+                input.dataset.max = maxQty;
+                input.max = maxQty;
+                
+                const currentQty = parseFloat(input.value) || 0;
+                const remainingShed = Math.max(0, shedQty - currentQty);
+                const remainingGlobal = Math.max(0, globalQty - currentQty);
+                
+                const dispDiv = input.parentElement.querySelector('div');
+                if (dispDiv && selectedShed) {
+                    dispDiv.textContent = `Disp: ${formatNumber(maxQty)} | Quedará: ${formatNumber(remainingShed)} en ${selectedShed} / ${formatNumber(remainingGlobal)} global`;
+                } else if (dispDiv) {
+                    dispDiv.textContent = `Disp: ${formatNumber(globalQty)} | Quedará: ${formatNumber(remainingGlobal)} global`;
+                }
+            });
+        };
+        
+        shedSelect.removeEventListener('change', updateStockForShed);
+        shedSelect.addEventListener('change', updateStockForShed);
+        
+        if (shedKeys.length === 1) {
+            setTimeout(updateStockForShed, 0);
+        }
     } else {
         shedContainer.classList.add('hidden');
         shedSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione galpón...</option>';
@@ -789,7 +823,7 @@ async function addToCart(code) {
         // Mostrar inputs para TODAS las medidas del weigth (venta y compra)
         qtyInputsContainer.innerHTML = weigthKeys.map(medit => `
             <div style="flex: 1;">
-                <label style="font-size: 12px; color: #636e72;">${medit} a ${isVenta ? 'vender' : 'comprar'}:</label>
+                <label style="font-size: 12px; color: #636e72;">Cantidad en ${medit} a ${isVenta ? 'vender' : 'comprar'}:</label>
                 <input type="number" class="sale-qty-input" data-medit="${medit}" placeholder="0" data-max="${isVenta ? (prod.weigth[medit] || 0) : ''}" step="any" min="0">
                 ${isVenta && prod.weigth[medit] ? `<div style="font-size: 11px; color: #636e72; text-align: right;">Disp: ${formatNumber(prod.weigth[medit] || 0)}</div>` : ''}
             </div>
@@ -836,6 +870,27 @@ async function addToCart(code) {
             document.querySelectorAll('.sale-qty-input').forEach(input => {
                 input.addEventListener('input', updateProjection);
             });
+            
+            document.querySelectorAll('.sale-qty-input').forEach(input => {
+                input.addEventListener('input', () => {
+                    const selectedShed = shedSelect?.value;
+                    const shedStock = selectedShed ? (prod.shed[selectedShed] || {}) : {};
+                    const globalStock = prod.weigth || {};
+                    const medit = input.dataset.medit;
+                    const currentQty = parseFloat(input.value) || 0;
+                    const shedQty = shedStock[medit] || 0;
+                    const globalQty = globalStock[medit] || 0;
+                    const remainingShed = Math.max(0, shedQty - currentQty);
+                    const remainingGlobal = Math.max(0, globalQty - currentQty);
+                    
+                    const dispDiv = input.parentElement.querySelector('div');
+                    if (dispDiv && selectedShed) {
+                        dispDiv.textContent = `Disp: ${formatNumber(Math.max(0, Math.min(shedQty, globalQty)))} | Quedará: ${formatNumber(remainingShed)} en ${selectedShed} / ${formatNumber(remainingGlobal)} global`;
+                    } else if (dispDiv) {
+                        dispDiv.textContent = `Disp: ${formatNumber(globalQty)} | Quedará: ${formatNumber(remainingGlobal)} global`;
+                    }
+                });
+            });
             const radios = document.querySelectorAll('input[name="pricingUnit"]');
             radios.forEach(r => r.addEventListener('change', updateProjection));
 
@@ -860,7 +915,7 @@ async function addToCart(code) {
             // Inputs de cantidad para TODAS las medidas del producto
             qtyInputsContainer.innerHTML = weigthKeys.map(medit => `
                 <div style="flex: 1;">
-                    <label style="font-size: 12px; color: #636e72;">${medit} a comprar:</label>
+                    <label style="font-size: 12px; color: #636e72;">Cantidad en ${medit} a comprar:</label>
                     <input type="number" class="sale-qty-input" data-medit="${medit}" placeholder="0" step="any" min="0">
                 </div>
             `).join('');
@@ -893,7 +948,7 @@ async function addToCart(code) {
         singleQtyInput = document.getElementById('saleQtyInput');
 
         const defaultMedit = pricingUnitDefault || 'Unidad';
-        singleQtyLabel.textContent = `${defaultMedit} a ${isVenta ? 'vender' : 'comprar'}:`;
+        singleQtyLabel.textContent = `Cantidad en ${defaultMedit} a ${isVenta ? 'vender' : 'comprar'}:`;
 
         document.getElementById('qtyProductInfo').innerHTML = `
             <b>Producto:</b> ${prod.product}<br>
@@ -1353,21 +1408,6 @@ async function liquidarVenta() {
                 generatePDFInvoice(pdfData);
             }
 
-            // Registrar movimientos de entrada (compras)
-            for (const item of cart) {
-                await _supabase.from('movements').insert([{
-                    name: item.name,
-                    type: 'ingreso',
-                    amount: item.quantities,
-                    farm: selectedFarm,
-                    shed: null,
-                    date_movement: timestamp.split(' ')[0],
-                    provider: item.providerName || '',
-                    description: `compra de ${item.name}`,
-                    created_at: timestamp
-                }]);
-            }
-
             resetSalesAfterLiquidation();
         }
     }
@@ -1414,9 +1454,14 @@ function generatePDFInvoice(data) {
     if (data.type === 'compra') headers[0].splice(2, 0, "Proveedor");
 
     const body = data.items.map(item => {
-        const qtyText = item.quantities && Object.keys(item.quantities).length > 0
-            ? Object.entries(item.quantities).map(([medit, qty]) => `${formatNumber(qty)} ${medit}`).join(' / ')
-            : formatNumber(item.quantity || 0);
+        let qtyText;
+        if (data.type === 'venta' && item.pricingUnit && item.quantities && item.quantities[item.pricingUnit]) {
+            qtyText = `${formatNumber(item.quantities[item.pricingUnit])} ${item.pricingUnit}`;
+        } else if (item.quantities && Object.keys(item.quantities).length > 0) {
+            qtyText = Object.entries(item.quantities).map(([medit, qty]) => `${formatNumber(qty)} ${medit}`).join(' / ');
+        } else {
+            qtyText = formatNumber(item.quantity || 0);
+        }
         const row = [item.code, item.name, qtyText, `$ ${formatNumber(item.price)}`, `$ ${formatNumber(item.total)}` ];
         if (data.type === 'compra') row.splice(2, 0, item.providerName);
         return row;
@@ -1587,24 +1632,33 @@ function viewFacturaDetail(item, type) {
     const codes = item.codes || item.code;
     const values = item.products_value || item.product_value;
     const providers = item.provider || [];
+    const amounts = item.amount || [];
     let tableHtml = `
         <thead>
             <tr>
                 <th>Cód</th>
                 <th>Producto</th>
                 ${!isVenta ? '<th>Proveedor</th>' : ''}
+                <th>Cantidades</th>
                 <th>Precio</th>
             </tr>
         </thead>
         <tbody>
-            ${products.map((p, i) => `
-                <tr>
-                    <td><small>${codes[i]}</small></td>
-                    <td>${p}</td>
-                    ${!isVenta ? `<td><small>${providers[i] || 'N/A'}</small></td>` : ''}
-                    <td>$ ${formatNumber(values[i])}</td>
-                </tr>
-            `).join('')}
+            ${products.map((p, i) => {
+                const amountObj = amounts[i] && typeof amounts[i] === 'object' ? amounts[i] : {};
+                const qtyText = Object.keys(amountObj).length > 0
+                    ? Object.entries(amountObj).map(([medit, qty]) => `${formatNumber(qty)} ${medit}`).join(' / ')
+                    : '-';
+                return `
+                    <tr>
+                        <td><small>${codes[i]}</small></td>
+                        <td>${p}</td>
+                        ${!isVenta ? `<td><small>${providers[i] || 'N/A'}</small></td>` : ''}
+                        <td>${qtyText}</td>
+                        <td>$ ${formatNumber(values[i])}</td>
+                    </tr>
+                `;
+            }).join('')}
         </tbody>
     `;
     table.innerHTML = tableHtml;
@@ -1630,14 +1684,20 @@ function downloadStoredInvoice(item, type) {
         entityName: isVenta ? item.client : "",
         entityId: isVenta ? item.client_cedula : "",
         farm: item.farm || "N/A",
-        items: products.map((p, i) => ({
-            code: codes[i],
-            name: p,
-            quantity: "-", // En el historial no guardamos cantidades por fila individual, se muestra soporte
-            price: values[i],
-            total: values[i],
-            providerName: providers[i] || ""
-        }))
+        items: products.map((p, i) => {
+            const amountObj = item.amount && item.amount[i] && typeof item.amount[i] === 'object' ? item.amount[i] : {};
+            const qtyText = Object.keys(amountObj).length > 0
+                ? Object.entries(amountObj).map(([medit, qty]) => `${formatNumber(qty)} ${medit}`).join(' / ')
+                : "-";
+            return {
+                code: codes[i],
+                name: p,
+                quantity: qtyText,
+                price: values[i],
+                total: values[i],
+                providerName: providers[i] || ""
+            };
+        })
     };
     generatePDFInvoice(pdfData);
 }

@@ -793,7 +793,7 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
     if (weigthData && typeof weigthData === 'object' && Object.keys(weigthData).length > 0) {
         inboundUnitsContainer.innerHTML = Object.entries(weigthData).map(([medit, stock]) => `
             <div style="flex: 1;">
-                <label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label>
+                <label style="font-size: 12px; color: #636e72;">Cantidad en (${medit}):</label>
                 <input type="text" class="inbound-unid-input" data-medit="${medit}" data-base-stock="${stock}" placeholder="0" style="width: 100%;">
                 <div style="font-size: 11px; color: #636e72;">
                     Disp: ${formatNumber(stock)} | Ingresando: <span class="inbound-enter-amount" data-medit="${medit}">0</span> | Quedará: <span class="inbound-remaining" data-medit="${medit}">${formatNumber(stock)}</span>
@@ -817,7 +817,7 @@ document.getElementById('inboundProduct')?.addEventListener('change', async func
     } else {
         inboundUnitsContainer.innerHTML = `
             <div style="flex: 1;">
-                <label style="font-size: 12px; color: #636e72;">Unidades:</label>
+                <label style="font-size: 12px; color: #636e72;">Cantidad en (Unidad):</label>
                 <input type="text" class="inbound-unid-input" data-medit="Unidad" data-base-stock="0" placeholder="0" style="width: 100%;">
                 <div class="inbound-stock-not-available" style="font-size: 11px; color: #d63031;">Producto base sin stock detallado por medidas</div>
             </div>
@@ -1099,7 +1099,7 @@ function renderOutboundStock(shedStock, weigthData, selectedOption) {
     if (stockForRender && typeof stockForRender === 'object' && Object.keys(stockForRender).length > 0) {
         outboundUnitsContainer.innerHTML = Object.entries(stockForRender).map(([medit, stock]) => `
             <div style="flex: 1;">
-                <label style="font-size: 12px; color: #636e72;">Unidades (${medit}):</label>
+                <label style="font-size: 12px; color: #636e72;">Cantidad en (${medit}):</label>
                 <input type="text" class="outbound-unid-input" data-medit="${medit}" placeholder="0" data-max="${stock}" style="width: 100%;">
                 <div style="font-size: 11px; color: #636e72;">
                     Disp: ${formatNumber(stock)} | Saliendo: <span class="outbound-exit-amount" data-medit="${medit}">0</span> | Quedará: <span class="outbound-remaining" data-medit="${medit}">${formatNumber(stock)}</span>
@@ -1109,7 +1109,7 @@ function renderOutboundStock(shedStock, weigthData, selectedOption) {
     } else {
         outboundUnitsContainer.innerHTML = `
             <div style="flex: 1;">
-                <label style="font-size: 12px; color: #636e72;">Unidades:</label>
+                <label style="font-size: 12px; color: #636e72;">Cantidad en (Unidad):</label>
                 <input type="text" class="outbound-unid-input" data-medit="Unidad" placeholder="0" data-max="0" style="width: 100%;">
                 <div style="font-size: 11px; color: #636e72;">
                     Disp: 0 | Saliendo: <span class="outbound-exit-amount" data-medit="Unidad">0</span> | Quedará: <span class="outbound-remaining" data-medit="Unidad">0</span>
@@ -1655,32 +1655,6 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
     if (error) showToast("Error al agregar producto: " + error.message, "error");
     else {
         showToast(isEdit ? "Producto actualizado" : "Producto agregado exitosamente");
-
-        // Requerimiento: registrar la nueva definición como una compra automáticamente
-        if (!isEdit) {
-            try {
-                const ts = getColombiaTimestamp();
-                const { count } = await _supabase.from('buys').select('*', { count: 'exact', head: true });
-                const invNum = String((count || 0) + 1).padStart(6, '0');
-                const { error: buyErr } = await _supabase.from('buys').insert([{
-                    invoice_number: invNum,
-                    product: [productData.name],
-                    code: [productData.base_code],
-                    product_value: [productData.buy_price || 0],
-                    provider: (productData.provider && productData.provider.length) ? [productData.provider[0]] : [],
-                    nit: [],
-                    total_payed: (productData.unit || 0) * (productData.buy_price || 0),
-                    payment_method: 'Efectivo',
-                    change: 0,
-                    amount: [productData.weigth && typeof productData.weigth === 'object' ? productData.weigth : { [Array.isArray(productData.medit) ? productData.medit[0] : (productData.medit || 'Unidad')]: (productData.unit || 0) }],
-                    medit: [(Array.isArray(productData.medit) ? productData.medit[0] : (productData.medit || 'Unidad'))],
-                    created_at: ts
-                }]);
-                if (buyErr) console.error('Error registrando compra automática:', buyErr);
-            } catch (e) {
-                console.error('Error registrando compra automática:', e);
-            }
-        }
 
         closeModals();
         // Refrescar la vista correcta
