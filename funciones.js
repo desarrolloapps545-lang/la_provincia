@@ -1454,7 +1454,7 @@ function renderProductsTable(products) {
                         <td>
                             <div style="display:flex; gap:5px;">
                             <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editInventoryItem('${p.id}')">Editar</button>
-                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteProduct('${p.base_code}')">Borrar</button>
+                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteInventoryItem('${p.id}')">Borrar</button>
                             </div>
                         </td>
                     </tr>
@@ -1672,6 +1672,8 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
                     total_payed: (productData.unit || 0) * (productData.buy_price || 0),
                     payment_method: 'Efectivo',
                     change: 0,
+                    amount: [productData.weigth && typeof productData.weigth === 'object' ? productData.weigth : { [Array.isArray(productData.medit) ? productData.medit[0] : (productData.medit || 'Unidad')]: (productData.unit || 0) }],
+                    medit: [(Array.isArray(productData.medit) ? productData.medit[0] : (productData.medit || 'Unidad'))],
                     created_at: ts
                 }]);
                 if (buyErr) console.error('Error registrando compra automática:', buyErr);
@@ -3544,18 +3546,52 @@ document.getElementById('formEditInventory')?.addEventListener('submit', async (
 window.deleteInventoryItem = async (idOrProduct) => {
     if (!confirm("¿Desea eliminar este registro del inventario?")) return;
     
-    // Ingeniería de Sistemas: Manejo polimórfico de eliminación para evitar errores de tipo en DB
     let query = _supabase.from('products').delete().eq('inventory', true);
+    let orClause;
     
     if (!isNaN(idOrProduct) && !String(idOrProduct).includes(':')) {
         query = query.eq('id', idOrProduct);
+        orClause = `id.eq.${idOrProduct}`;
     } else {
         query = query.eq('name', idOrProduct);
+        orClause = `name.eq.${idOrProduct}`;
+    }
+
+    const { data: invData, error: fetchError } = await _supabase
+        .from('products')
+        .select('id, weigth, base_code')
+        .eq('inventory', true)
+        .or(orClause)
+        .maybeSingle();
+
+    if (fetchError || !invData) {
+        showToast("Error: No se encontró el registro de inventario", "error");
+        return;
     }
 
     const { error } = await query;
-    if (error) showToast("Error: " + error.message, "error");
-    else { showToast("Registro eliminado"); loadFilteredInventory(window.CURRENT_VIEW_MODE); }
+    if (error) {
+        showToast("Error: " + error.message, "error");
+    } else {
+        if (invData.base_code && invData.weigth && typeof invData.weigth === 'object' && Object.keys(invData.weigth).length > 0) {
+            const { data: baseProd, error: baseError } = await _supabase
+                .from('products')
+                .select('weigth')
+                .eq('base_code', invData.base_code)
+                .eq('inventory', false)
+                .maybeSingle();
+
+            if (!baseError && baseProd) {
+                const newBaseWeigth = { ...(baseProd.weigth || {}) };
+                Object.entries(invData.weigth).forEach(([medit, value]) => {
+                    newBaseWeigth[medit] = (newBaseWeigth[medit] || 0) + value;
+                });
+                await _supabase.from('products').update({ weigth: newBaseWeigth }).eq('base_code', invData.base_code).eq('inventory', false);
+            }
+        }
+        showToast("Registro eliminado y unidades devueltas al producto base");
+        loadFilteredInventory(window.CURRENT_VIEW_MODE);
+    }
 };
 
 window.editInventoryItem = async (inventoryId) => {

@@ -109,8 +109,8 @@ async function generarInformeGanancias() {
     container.innerHTML = '<p style="padding: 20px; text-align: center;">Cargando datos...</p>';
 
     const [salesRes, buysRes] = await Promise.all([
-        _supabase.from('sales').select('total_to_pay, created_at').order('created_at', { ascending: true }),
-        _supabase.from('buys').select('total_payed, created_at').order('created_at', { ascending: true })
+        _supabase.from('sales').select('total_to_pay, created_at, invoice_number').order('created_at', { ascending: true }),
+        _supabase.from('buys').select('total_payed, created_at, invoice_number').order('created_at', { ascending: true })
     ]);
 
     if (salesRes.error) {
@@ -262,13 +262,32 @@ async function generarInformeCompras() {
         const proveedores = buy.provider || [];
         const total = buy.total_payed || 0;
 
-        const productosDetalle = productos.map((p, i) => `${p} ($${formatNumber(valores[i] || 0)})`).join(', ');
+        const productosDetalle = productos.map((p, i) => {
+            let meditValue = '';
+            if (buy.medit) {
+                if (Array.isArray(buy.medit)) {
+                    meditValue = buy.medit[i] || '';
+                } else {
+                    meditValue = buy.medit;
+                }
+            }
+            return `${p} ${meditValue} $${formatNumber(valores[i] || 0)}`;
+        }).join(', ');
+
+        const cantidades = (buy.amount && Array.isArray(buy.amount))
+            ? buy.amount.map(amt => {
+                return (amt && typeof amt === 'object')
+                    ? Object.entries(amt).map(([k, v]) => `${formatNumber(v)} ${k}`).join(' / ')
+                    : '-';
+            }).join('<br>')
+            : '-';
 
         return {
             factura: buy.invoice_number,
             fecha: format12h(buy.created_at),
             proveedores: [...new Set(proveedores)].join(', '),
             productos: productosDetalle || '-',
+            cantidades: cantidades,
             total: total,
             metodo: buy.payment_method
         };
@@ -295,6 +314,7 @@ async function generarInformeCompras() {
                         <th>Fecha</th>
                         <th>Proveedores</th>
                         <th>Productos</th>
+                        <th>Cantidades</th>
                         <th>Total</th>
                         <th>Método de Pago</th>
                     </tr>
@@ -306,6 +326,7 @@ async function generarInformeCompras() {
                             <td>${r.fecha}</td>
                             <td>${r.proveedores}</td>
                             <td>${r.productos}</td>
+                            <td>${r.cantidades}</td>
                             <td>$ ${formatNumber(r.total)}</td>
                             <td>${r.metodo}</td>
                         </tr>
@@ -350,12 +371,30 @@ async function generarInformeVentas() {
     const rows = filtered.map(sale => {
         const productos = sale.products || [];
         const valores = sale.products_value || [];
-        const productosDetalle = productos.map((p, i) => `${p} ($${formatNumber(valores[i] || 0)})`).join(', ');
+        const productosDetalle = productos.map((p, i) => {
+            let meditValue = '';
+            if (sale.medit) {
+                if (Array.isArray(sale.medit)) {
+                    meditValue = sale.medit[i] || '';
+                } else {
+                    meditValue = sale.medit;
+                }
+            }
+            return `${p} ${meditValue} $${formatNumber(valores[i] || 0)}`;
+        }).join(', ');
+        const cantidades = (sale.amount && Array.isArray(sale.amount))
+            ? sale.amount.map(amt => {
+                return (amt && typeof amt === 'object')
+                    ? Object.entries(amt).map(([k, v]) => `${formatNumber(v)} ${k}`).join(' / ')
+                    : '-';
+            }).join('<br>')
+            : '-';
         return {
             factura: sale.invoice_number,
             fecha: format12h(sale.created_at),
             cliente: sale.client,
             productos: productosDetalle || '-',
+            cantidades: cantidades,
             total: sale.total_to_pay || 0,
             metodo: sale.payment_method,
             granja: sale.farm || '-'
@@ -384,6 +423,7 @@ async function generarInformeVentas() {
                         <th>Cliente</th>
                         <th>Granja</th>
                         <th>Productos</th>
+                        <th>Cantidades</th>
                         <th>Total</th>
                         <th>Método de Pago</th>
                     </tr>
@@ -396,6 +436,7 @@ async function generarInformeVentas() {
                             <td>${r.cliente}</td>
                             <td>${r.granja}</td>
                             <td>${r.productos}</td>
+                            <td>${r.cantidades}</td>
                             <td>$ ${formatNumber(r.total)}</td>
                             <td>${r.metodo}</td>
                         </tr>

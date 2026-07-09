@@ -67,6 +67,18 @@ function switchView(viewId) {
     document.getElementById(viewId).classList.remove('hidden');
 }
 
+const normalizeShed = (shed) => {
+    if (!shed) return {};
+    if (typeof shed === 'object' && shed !== null) return shed;
+    if (typeof shed === 'string') {
+        try {
+            const parsed = JSON.parse(shed);
+            if (typeof parsed === 'object' && parsed !== null) return parsed;
+        } catch (_) {}
+    }
+    return {};
+};
+
 document.getElementById('btnClientes')?.addEventListener('click', () => {
     switchView('clientesView');
     loadClients('persona'); // Por defecto, mostrar clientes tipo 'persona'
@@ -376,15 +388,13 @@ function togglePaymentInputs() {
 async function loadInventoryForSales() {
     if (billingMode === 'venta' && !selectedFarm) return;
 
-    // Ingeniería de Datos: Obtención de saldos físicos
     let inv = [];
     if (billingMode === 'venta') {
         const { data } = await _supabase
             .from('products')
-            .select('inventory_code, name, weigth')
+            .select('inventory_code, name, weigth, shed')
             .eq('farm', selectedFarm)
             .eq('inventory', true);
-        // Mapeo manual para asegurar la estructura de datos correcta
         inv = (data || []).map(item => {
             const weigthValues = item.weigth && typeof item.weigth === 'object'
                 ? Object.entries(item.weigth).filter(([,v]) => typeof v === 'number')
@@ -394,7 +404,8 @@ async function loadInventoryForSales() {
                 code: item.inventory_code,
                 product: item.name,
                 amount,
-                weigth: item.weigth // Objeto con pesos detallados para visualización
+                weigth: item.weigth,
+                shed: item.shed
             };
         }).filter(i => i.amount > 0);
     }
@@ -704,6 +715,14 @@ async function addToCart(code) {
     const form = document.getElementById('formAddQty');
     form.reset();
 
+    const shedSelect = document.getElementById('shedSelect');
+    const shedContainer = document.getElementById('shedSelectorContainer');
+    if (shedSelect) {
+        shedSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione galpón...</option>';
+        shedSelect.disabled = true;
+    }
+    if (shedContainer) shedContainer.classList.add('hidden');
+
     const isVenta = billingMode === 'venta';
 
     const qtyInputsContainer = document.getElementById('qtyInputsContainer');
@@ -712,6 +731,20 @@ async function addToCart(code) {
     let singleQtyInput = document.getElementById('saleQtyInput');
 
     qtyInputsContainer.innerHTML = ''; // Limpiar contenedor
+
+    // Ingeniería de Sistemas: Selección de galpón para productos de inventario con galpones
+    if (isVenta && prod.shed && typeof prod.shed === 'object' && Object.keys(prod.shed).length > 0) {
+        const shedKeys = Object.keys(prod.shed);
+        shedContainer.classList.remove('hidden');
+        shedSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione galpón...</option>' +
+            shedKeys.map(k => `<option value="${k}">${k}</option>`).join('');
+        shedSelect.disabled = shedKeys.length === 1;
+        if (shedKeys.length === 1) shedSelect.value = shedKeys[0];
+    } else {
+        shedContainer.classList.add('hidden');
+        shedSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione galpón...</option>';
+        shedSelect.disabled = true;
+    }
 
     // Ingeniería de Sistemas: Verificación de existencia de elementos para evitar errores de null.
     if (pricingUnitSelector) {
@@ -994,6 +1027,13 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
 
     if (totalQuantity <= 0) return showToast("Ingrese una cantidad válida", "error");
 
+    if (isVenta && productPendingToCart.shed && typeof productPendingToCart.shed === 'object' && Object.keys(productPendingToCart.shed).length > 0) {
+        const shedVal = document.getElementById('shedSelect')?.value;
+        if (!shedVal) {
+            return showToast("Seleccione el galpón de origen del producto", "error");
+        }
+    }
+
     let providerName = "";
     let providerNit = null;
 
@@ -1048,7 +1088,8 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
             price: unitPrice,
             total: quantityForPriceCalc * unitPrice,
             providerName: providerName,
-            providerNit: providerNit
+            providerNit: providerNit,
+            shed: shedSelect?.value || null
         });
     }
     updateCartUI();
@@ -1152,6 +1193,8 @@ async function liquidarVenta() {
             payment_method: method,
             farm: selectedFarm,
             change: changeValue,
+            amount: cart.map(item => item.quantities),
+            medit: cart.length === 1 ? cart[0].pricingUnit : cart.map(item => item.pricingUnit),
             created_at: timestamp
         };
         
@@ -1179,7 +1222,7 @@ async function liquidarVenta() {
             for (const item of cart) {
                 const { data: invItem, error: invQueryErr } = await _supabase
                     .from('products')
-                    .select('id, weigth')
+                    .select('id, weigth, shed')
                     .eq('inventory_code', item.code)
                     .eq('inventory', true)
                     .maybeSingle();
@@ -1194,9 +1237,24 @@ async function liquidarVenta() {
                     newWeigth[medit] = Math.max(0, (newWeigth[medit] || 0) - qty);
                 });
 
+                const shedJson = normalizeShed(invItem.shed);
+                if (item.shed && shedJson[item.shed]) {
+                    Object.entries(item.quantities || {}).forEach(([medit, qty]) => {
+                        shedJson[item.shed][medit] = Math.max(0, (shedJson[item.shed][medit] || 0) - qty);
+                    });
+                    if (Object.values(shedJson[item.shed]).every(v => v <= 0)) {
+                        delete shedJson[item.shed];
+                    }
+                }
+
+                const updateData = { weigth: newWeigth };
+                if (Object.keys(shedJson).length > 0) {
+                    updateData.shed = shedJson;
+                }
+
                 const { error: updInvErr } = await _supabase
                     .from('products')
-                    .update({ weigth: newWeigth })
+                    .update(updateData)
                     .eq('id', invItem.id);
 
                 if (updInvErr) {
@@ -1244,6 +1302,8 @@ async function liquidarVenta() {
             total_payed: totalGeneral,
             payment_method: method,
             change: changeValue,
+            amount: cart.map(item => item.quantities),
+            medit: cart.length === 1 ? cart[0].pricingUnit : cart.map(item => item.pricingUnit),
             created_at: timestamp
         };
 
@@ -1402,24 +1462,21 @@ async function prepareFacturasView(type) {
     currentFacturasType = type;
     document.getElementById('currentFacturasType').textContent = type === 'ventas' ? 'Ventas' : 'Compras';
 
-    // Reiniciar filtros al entrar a la vista
     const prodSelect = document.getElementById('filterProduct');
-    const catSelect = document.getElementById('filterCategory');
     prodSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione producto...</option>';
     prodSelect.disabled = true;
-    catSelect.classList.add('hidden'); // Ocultar selector de categoría
 
     document.getElementById('facturasFilterBar').classList.remove('hidden');
     document.getElementById('facturasTableContainer').innerHTML = '<p style="padding:40px; text-align:center; color:#636e72;">Filtre para ver las facturas</p>';
     
-    // Cargar productos para filtro
-    const { data: products } = await _supabase.from('products').select('name').order('name');
+    const { data: products } = await _supabase.from('products').select('name').eq('inventory', false).order('name');
     products?.forEach(p => {
         const opt = document.createElement('option');
         opt.value = p.name;
         opt.textContent = p.name;
         prodSelect.appendChild(opt);
     });
+    prodSelect.disabled = false;
 
     // Filtrado automático al cambiar cualquier input
     ['filterDateStart', 'filterDateEnd', 'filterProduct'].forEach(id => {
