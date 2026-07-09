@@ -321,8 +321,8 @@
             <form id="formCreateSupplier" autocomplete="off">
                 <input type="text" id="supName" placeholder="Nombre del proveedor" required>
                 <input type="number" id="supNit" placeholder="Nit" required>
-                <label style="font-size: 12px; color: #636e72; display: block; margin-bottom: 5px;">Productos (mantén Ctrl para seleccionar varios):</label>
-                <select id="supProducts" multiple required style="height: 100px;"></select>
+                <label style="font-size: 12px; color: #636e72; display: block; margin-bottom: 5px;">Productos que suministra (separados por coma):</label>
+                <input type="text" id="supProducts" placeholder="Ej: Maíz, Concentrado, Alfalfa" required>
                 <div class="modal-btns">
                     <button type="submit">Guardar</button>
                     <button type="button" class="btn-cancel" onclick="closeModals()">Cancelar</button>

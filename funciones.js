@@ -944,7 +944,7 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
         const shedJson = shedValue ? { [String(shedValue)]: { ...weigthData } } : {};
         const { error: insErr } = await _supabase.from('products').insert([{
             base_code: pData.base_code,
-            inventory_code: await generateNextInventoryCode(),
+            inventory_code: (await generateNextInventoryCode())[0],
             name: pData.name,
             medit: pData.medit,
             buy_price: pData.buy_price,
@@ -1653,9 +1653,34 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
 
     const { error } = result;
     if (error) showToast("Error al agregar producto: " + error.message, "error");
-    else { 
-        showToast(isEdit ? "Producto actualizado" : "Producto agregado exitosamente"); 
-        closeModals(); 
+    else {
+        showToast(isEdit ? "Producto actualizado" : "Producto agregado exitosamente");
+
+        // Requerimiento: registrar la nueva definición como una compra automáticamente
+        if (!isEdit) {
+            try {
+                const ts = getColombiaTimestamp();
+                const { count } = await _supabase.from('buys').select('*', { count: 'exact', head: true });
+                const invNum = String((count || 0) + 1).padStart(6, '0');
+                const { error: buyErr } = await _supabase.from('buys').insert([{
+                    invoice_number: invNum,
+                    product: [productData.name],
+                    code: [productData.base_code],
+                    product_value: [productData.buy_price || 0],
+                    provider: (productData.provider && productData.provider.length) ? [productData.provider[0]] : [],
+                    nit: [],
+                    total_payed: (productData.unit || 0) * (productData.buy_price || 0),
+                    payment_method: 'Efectivo',
+                    change: 0,
+                    created_at: ts
+                }]);
+                if (buyErr) console.error('Error registrando compra automática:', buyErr);
+            } catch (e) {
+                console.error('Error registrando compra automática:', e);
+            }
+        }
+
+        closeModals();
         // Refrescar la vista correcta
         const isInventoryItem = form.dataset.isInventory === 'true';
         if (isInventoryItem) renderProductsView();

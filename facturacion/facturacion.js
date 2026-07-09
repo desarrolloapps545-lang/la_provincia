@@ -201,6 +201,31 @@ async function initSalesProcess() {
     }
 }
 
+// Reinicio ligero tras liquidar: conserva granja/cliente/proveedores y vuelve a la
+// selección de productos (evita el reseteo completo que parecía una recarga innecesaria)
+function resetSalesAfterLiquidation() {
+    cart = [];
+    productPendingToCart = null;
+    const searchProd = document.getElementById('searchProductSales');
+    if (searchProd) searchProd.value = "";
+    const payMethod = document.getElementById('paymentMethod');
+    if (payMethod) payMethod.value = "";
+    document.getElementById('paymentMethodBadge')?.classList.add('hidden');
+    document.getElementById('saleReceivedRow')?.classList.add('hidden');
+    document.getElementById('saleChangeRow')?.classList.add('hidden');
+    const cashInput = document.getElementById('cashReceivedInput');
+    if (cashInput) cashInput.value = "";
+    updateCartUI();
+
+    if (billingMode === 'venta') {
+        if (selectedFarm && selectedEntity) goToStep2();
+        else initSalesProcess();
+    } else {
+        if (selectedProviders.length) goToStep2();
+        else initSalesProcess();
+    }
+}
+
 async function loadFarmsForSales() {
     const farmSelect = document.getElementById('salesFarmSelect');
     const { data, error } = await _supabase.from('farms').select('name').order('name');
@@ -377,7 +402,7 @@ async function loadInventoryForSales() {
     // Obtención de información comercial de la tabla products
     const { data: prods, error: prodErr } = await _supabase
         .from('products')
-        .select('name, sale_price, buy_price, base_code, animal, to_sale, weigth');
+        .select('name, sale_price, buy_price, base_code, animal, to_sale, weigth, inventory');
     
     if (!prodErr) {
         const priceMap = Object.fromEntries(prods.map(p => [p.name, p.sale_price]));
@@ -402,6 +427,7 @@ async function loadInventoryForSales() {
 
             inventoryData = prods
                 .filter(p => p.animal !== true && p.to_sale !== false) // No animales, solo to_sale true/null
+                .filter(p => p.inventory !== true && p.inventory !== 'true') // Solo productos base (definiciones), excluye items de inventario
                 .filter(p => allowedProductNames.has(normalizeText(p.name)))
                 .map(p => ({
                     code: p.base_code,
@@ -604,11 +630,25 @@ document.getElementById('searchProductSales')?.addEventListener('input', (e) => 
     renderInventorySales(filtered);
 });
 
+// Lista en memoria de los productos actualmente renderizados (para delegación de eventos)
+let currentSalesItems = [];
+
+// Delegación de eventos: evita interpolar datos (como el código) en handlers onclick inline,
+// lo cual rompía la sintaxis cuando el código contenía comillas/apóstrofes.
+document.getElementById('inventorySalesList')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-add-cart');
+    if (!btn) return;
+    const idx = parseInt(btn.dataset.idx, 10);
+    const item = currentSalesItems[idx];
+    if (item) addToCart(item.code);
+});
+
 function renderInventorySales(items) {
     const list = document.getElementById('inventorySalesList');
     
     // En compras no filtramos por stock
     const availableItems = billingMode === 'venta' ? items.filter(item => item.amount > 0) : items;
+    currentSalesItems = availableItems;
 
     if (availableItems.length === 0) {
         list.innerHTML = '<p style="text-align:center; color:#b2bec3; font-size:13px;">No hay coincidencias</p>';
@@ -635,7 +675,7 @@ function renderInventorySales(items) {
         return 'No aplica';
     };
 
-    list.innerHTML = availableItems.map(item => `
+    list.innerHTML = availableItems.map((item, idx) => `
         <div class="product-sale-card">
             <div class="product-info-mini">
                 <b>${item.product}</b>
@@ -643,7 +683,7 @@ function renderInventorySales(items) {
                 <p>${billingMode === 'venta' ? 'Precios Venta:' : 'Precio Compra:'} <br> ${formatSalePrice(item)}</p>
                 <p style="color:#00b894; font-size:10px;">Cód: ${item.code}</p>
             </div>
-            <button type="button" class="btn-add-cart" onclick="addToCart('${item.code}')">Agregar</button>
+            <button type="button" class="btn-add-cart" data-idx="${idx}">Agregar</button>
         </div>
     `).join('');
 }
@@ -668,8 +708,8 @@ async function addToCart(code) {
 
     const qtyInputsContainer = document.getElementById('qtyInputsContainer');
     const pricingUnitSelector = document.getElementById('pricingUnitSelector');
-    const singleQtyLabel = document.getElementById('qtyLabel');
-    const singleQtyInput = document.getElementById('saleQtyInput');
+    let singleQtyLabel = document.getElementById('qtyLabel');
+    let singleQtyInput = document.getElementById('saleQtyInput');
 
     qtyInputsContainer.innerHTML = ''; // Limpiar contenedor
 
@@ -685,8 +725,8 @@ async function addToCart(code) {
     const providerSelect = document.getElementById('itemProviderSelect');
     const projectionContainer = document.getElementById('salePriceProjection');
 
-    // Lógica para ventas con medidas/weigth
-    const weigthKeys = isVenta && prod.weigth && typeof prod.weigth === 'object'
+    // Lógica para ventas/compras con medidas/weigth (todas las medidas del producto)
+    const weigthKeys = prod.weigth && typeof prod.weigth === 'object'
         ? Object.keys(prod.weigth)
         : [];
     
@@ -707,74 +747,121 @@ async function addToCart(code) {
 
     const hasMultipleSalePrices = Object.keys(salePriceInfo).length > 1;
 
-    if (isVenta && weigthKeys.length > 0) {
+    if (weigthKeys.length > 0) {
         if (singleQtyLabel) singleQtyLabel.classList.add('hidden');
         if (singleQtyInput) singleQtyInput.classList.add('hidden');
 
         document.getElementById('qtyProductInfo').innerHTML = `<b>Producto:</b> ${prod.product}`;
 
-        // Mostrar inputs para TODAS las medidas del weigth
+        // Mostrar inputs para TODAS las medidas del weigth (venta y compra)
         qtyInputsContainer.innerHTML = weigthKeys.map(medit => `
             <div style="flex: 1;">
-                <label style="font-size: 12px; color: #636e72;">Unidades a vender (${medit}):</label>
-                <input type="number" class="sale-qty-input" data-medit="${medit}" placeholder="0" data-max="${prod.weigth[medit] || 0}" step="any" min="0">
-                <div style="font-size: 11px; color: #636e72; text-align: right;">Disp: ${formatNumber(prod.weigth[medit] || 0)}</div>
+                <label style="font-size: 12px; color: #636e72;">${medit} a ${isVenta ? 'vender' : 'comprar'}:</label>
+                <input type="number" class="sale-qty-input" data-medit="${medit}" placeholder="0" data-max="${isVenta ? (prod.weigth[medit] || 0) : ''}" step="any" min="0">
+                ${isVenta && prod.weigth[medit] ? `<div style="font-size: 11px; color: #636e72; text-align: right;">Disp: ${formatNumber(prod.weigth[medit] || 0)}</div>` : ''}
             </div>
         `).join('');
 
-        // Radios solo si hay múltiples precios por medida
-        if (hasMultipleSalePrices && pricingUnitSelector) {
-            pricingUnitSelector.classList.remove('hidden');
-            pricingUnitSelector.innerHTML = `
-                <label style="font-size: 12px; color: #636e72; font-weight: bold;">Calcular precio basado en:</label>
-                <div style="display: flex; gap: 15px; margin-top: 5px;">
-                ${weigthKeys.map((medit, index) => {
-                    const priceText = salePriceInfo[medit]
-                        ? ` ($${formatNumber(salePriceInfo[medit])})`
-                        : '';
-                    return `
-                    <label style="display: flex; align-items: center; gap: 5px; font-size: 14px;">
-                        <input type="radio" name="pricingUnit" value="${medit}" ${(!pricingUnitDefault || index === 0) ? 'checked' : ''}>
-                        ${medit}${priceText}
-                    </label>
-                    `;
-                }).join('')}
+        if (isVenta) {
+            // Radios solo si hay múltiples precios por medida
+            if (hasMultipleSalePrices && pricingUnitSelector) {
+                pricingUnitSelector.classList.remove('hidden');
+                pricingUnitSelector.innerHTML = `
+                    <label style="font-size: 12px; color: #636e72; font-weight: bold;">Calcular precio basado en:</label>
+                    <div style="display: flex; gap: 15px; margin-top: 5px;">
+                    ${weigthKeys.map((medit, index) => {
+                        const priceText = salePriceInfo[medit]
+                            ? ` ($${formatNumber(salePriceInfo[medit])})`
+                            : '';
+                        return `
+                        <label style="display: flex; align-items: center; gap: 5px; font-size: 14px;">
+                            <input type="radio" name="pricingUnit" value="${medit}" ${(!pricingUnitDefault || index === 0) ? 'checked' : ''}>
+                            ${medit}${priceText}
+                        </label>
+                        `;
+                    }).join('')}
+                    </div>
+                `;
+            } else if (pricingUnitSelector) {
+                pricingUnitSelector.classList.add('hidden');
+                pricingUnitSelector.innerHTML = '';
+            }
+
+            // Proyección en tiempo real
+            projectionContainer.classList.remove('hidden');
+
+            const updateProjection = () => {
+                const selectedRadio = document.querySelector('input[name="pricingUnit"]:checked');
+                const pricingUnit = selectedRadio ? selectedRadio.value : (pricingUnitDefault || weigthKeys[0]);
+                const qtyInput = document.querySelector(`.sale-qty-input[data-medit="${pricingUnit}"]`);
+                const quantity = parseFloat(qtyInput?.value) || 0;
+                const salePrice = salePriceInfo[pricingUnit] || 0;
+                const projection = quantity * salePrice;
+                projectionContainer.textContent = `Proyección de Venta: $ ${formatNumber(projection)}`;
+            };
+
+            document.querySelectorAll('.sale-qty-input').forEach(input => {
+                input.addEventListener('input', updateProjection);
+            });
+            const radios = document.querySelectorAll('input[name="pricingUnit"]');
+            radios.forEach(r => r.addEventListener('change', updateProjection));
+
+            updateProjection();
+        } else {
+            // COMPRA: mostrar inputs de TODAS las medidas y permitir elegir la medida de cálculo
+            if (pricingUnitSelector) {
+                pricingUnitSelector.classList.remove('hidden');
+                pricingUnitSelector.innerHTML = `
+                    <label style="font-size: 12px; color: #636e72; font-weight: bold;">Medida de compra (cálculo):</label>
+                    <div style="display: flex; gap: 15px; margin-top: 5px;">
+                    ${weigthKeys.map((medit, index) => `
+                        <label style="display: flex; align-items: center; gap: 5px; font-size: 14px;">
+                            <input type="radio" name="pricingUnit" value="${medit}" ${index === 0 ? 'checked' : ''}>
+                            ${medit}
+                        </label>
+                    `).join('')}
+                    </div>
+                `;
+            }
+
+            // Inputs de cantidad para TODAS las medidas del producto
+            qtyInputsContainer.innerHTML = weigthKeys.map(medit => `
+                <div style="flex: 1;">
+                    <label style="font-size: 12px; color: #636e72;">${medit} a comprar:</label>
+                    <input type="number" class="sale-qty-input" data-medit="${medit}" placeholder="0" step="any" min="0">
                 </div>
-            `;
-        } else if (pricingUnitSelector) {
-            pricingUnitSelector.classList.add('hidden');
-            pricingUnitSelector.innerHTML = '';
+            `).join('');
+
+            projectionContainer.classList.remove('hidden');
+
+            const updateCompraProjection = () => {
+                const sel = document.querySelector('input[name="pricingUnit"]:checked');
+                const medit = sel ? sel.value : weigthKeys[0];
+                const inp = document.querySelector(`.sale-qty-input[data-medit="${medit}"]`);
+                const q = parseFloat(inp?.value) || 0;
+                const price = parseInt((document.getElementById('unitPriceInput')?.value || '').replace(/\D/g, '')) || 0;
+                projectionContainer.textContent = `Proyección de Compra: $ ${formatNumber(q * price)}`;
+            };
+
+            document.querySelectorAll('.sale-qty-input').forEach(input => input.addEventListener('input', updateCompraProjection));
+            pricingUnitSelector?.querySelectorAll('input[name="pricingUnit"]').forEach(r => r.addEventListener('change', updateCompraProjection));
+            document.getElementById('unitPriceInput')?.addEventListener('input', updateCompraProjection);
+            updateCompraProjection();
         }
-
-        // Proyección en tiempo real
-        projectionContainer.classList.remove('hidden');
-
-        const updateProjection = () => {
-            const selectedRadio = document.querySelector('input[name="pricingUnit"]:checked');
-            const pricingUnit = selectedRadio ? selectedRadio.value : (pricingUnitDefault || weigthKeys[0]);
-            const qtyInput = document.querySelector(`.sale-qty-input[data-medit="${pricingUnit}"]`);
-            const quantity = parseFloat(qtyInput?.value) || 0;
-            const salePrice = salePriceInfo[pricingUnit] || 0;
-            const projection = quantity * salePrice;
-            projectionContainer.textContent = `Proyección de Venta: $ ${formatNumber(projection)}`;
-        };
-
-        document.querySelectorAll('.sale-qty-input').forEach(input => {
-            input.addEventListener('input', updateProjection);
-        });
-        const radios = document.querySelectorAll('input[name="pricingUnit"]');
-        radios.forEach(r => r.addEventListener('change', updateProjection));
-
-        updateProjection();
 
     } else {
         // Lógica para productos sin weigth o con una sola medida/precio
-        if (singleQtyLabel) singleQtyLabel.classList.remove('hidden');
-        if (singleQtyInput) singleQtyInput.classList.remove('hidden');
-        
+        // El contenedor fue limpiado en la linea anterior, así que reconstruimos el input único
+        qtyInputsContainer.innerHTML = `
+            <label id="qtyLabel" style="font-size: 12px; color: #636e72;">Cantidad:</label>
+            <input type="number" id="saleQtyInput" min="0.01" step="any" required placeholder="0">
+        `;
+        singleQtyLabel = document.getElementById('qtyLabel');
+        singleQtyInput = document.getElementById('saleQtyInput');
+
         const defaultMedit = pricingUnitDefault || 'Unidad';
-        singleQtyLabel.textContent = isVenta ? `Cantidad a vender (${defaultMedit}):` : `Cantidad a comprar (${defaultMedit}):`;
-        
+        singleQtyLabel.textContent = `${defaultMedit} a ${isVenta ? 'vender' : 'comprar'}:`;
+
         document.getElementById('qtyProductInfo').innerHTML = `
             <b>Producto:</b> ${prod.product}<br>
             ${isVenta ? `<b>Stock disponible:</b> ${formatNumber(prod.amount)} ${defaultMedit}` : ''}
@@ -811,7 +898,7 @@ async function addToCart(code) {
         }
 
     } else {
-        singleQtyInput.removeAttribute('max');
+        singleQtyInput?.removeAttribute('max');
         priceEditContainer.classList.remove('hidden');
         priceInput.value = formatNumber(prod.buy_price || 0);
         
@@ -847,8 +934,8 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
     let totalQuantity = 0;
     let pricingUnit = null;
 
-    // Determinar si hay multi-medida y multi-precio
-    const weigthKeys = isVenta && productPendingToCart.weigth && typeof productPendingToCart.weigth === 'object'
+    // Determinar si hay multi-medida (venta y compra)
+    const weigthKeys = productPendingToCart.weigth && typeof productPendingToCart.weigth === 'object'
         ? Object.keys(productPendingToCart.weigth)
         : [];
     
@@ -865,9 +952,12 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
             pricingUnitDefault = weigthKeys[0] || (Array.isArray(productPendingToCart.medit) ? productPendingToCart.medit[0] : productPendingToCart.medit) || 'Unidad';
             salePriceInfo = { [pricingUnitDefault]: productPendingToCart.sale_price };
         }
+    } else if (!isVenta && weigthKeys.length > 0) {
+        // En compras el precio se edita manualmente; usamos la primera medida como unidad de referencia
+        pricingUnitDefault = weigthKeys[0];
     }
 
-    if (isVenta && weigthKeys.length > 0) {
+    if (weigthKeys.length > 0) {
         const emptyInputs = [];
 
         document.querySelectorAll('.sale-qty-input').forEach(input => {
@@ -887,7 +977,12 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
         totalQuantity = Object.values(quantities).reduce((sum, qty) => sum + qty, 0);
 
         const selectedRadio = document.querySelector('input[name="pricingUnit"]:checked');
-        pricingUnit = selectedRadio ? selectedRadio.value : pricingUnitDefault;
+        pricingUnit = selectedRadio ? selectedRadio.value : (pricingUnitDefault || weigthKeys[0]);
+
+        // En compras el precio es único y manual: la cantidad para el cálculo es la suma de todas las medidas
+        if (!isVenta) {
+            pricingUnit = Object.keys(quantities)[0] || pricingUnitDefault || weigthKeys[0];
+        }
     } else {
         const qty = parseFloat(document.getElementById('saleQtyInput').value);
         if (isNaN(qty) || qty <= 0) return showToast("Ingrese una cantidad válida", "error");
@@ -933,6 +1028,7 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
     }
 
     const existing = cart.find(item => String(item.code) === String(productPendingToCart.code));
+    // El cálculo de precio/total usa la medida seleccionada (pricingUnit); se guardan todas las medidas
     const quantityForPriceCalc = parseFloat(quantities[pricingUnit]) || 0;
 
     if (existing) {
@@ -977,12 +1073,10 @@ function updateCartUI() {
     }
 
     const formatQuantities = (item) => {
-        if (item.quantities && Object.keys(item.quantities).length > 1 && item.pricingUnit) {
-            const qty = item.quantities[item.pricingUnit];
-            return `${formatNumber(qty)} ${item.pricingUnit}`;
-        } else if (item.quantities) {
-            const [medit, qty] = Object.entries(item.quantities)[0];
-            return `${formatNumber(qty)} ${medit}`;
+        if (item.quantities && Object.keys(item.quantities).length > 0) {
+            return Object.entries(item.quantities)
+                .map(([medit, qty]) => `${formatNumber(qty)} ${medit}`)
+                .join(' / ');
         }
         // Fallback para items antiguos o de una sola unidad
         return formatNumber(item.quantity);
@@ -1116,8 +1210,24 @@ async function liquidarVenta() {
             } else {
                 showToast("Venta liquidada");
             }
+
+            // Registrar movimientos de salida (ventas)
+            for (const item of cart) {
+                await _supabase.from('movements').insert([{
+                    name: item.name,
+                    type: 'salida',
+                    amount: item.quantities,
+                    farm: selectedFarm,
+                    shed: null,
+                    date_movement: timestamp.split(' ')[0],
+                    provider: '',
+                    description: `Venta de ${item.name}`,
+                    created_at: timestamp
+                }]);
+            }
+
             generatePDFInvoice(pdfData);
-            initSalesProcess();
+            resetSalesAfterLiquidation();
         }
     } else {
         // Obtener siguiente número de factura para compras
@@ -1153,22 +1263,26 @@ async function liquidarVenta() {
         if (error) {
             showToast("Error al liquidar compra: " + error.message, "error");
         } else {
-            // Ingeniería de Backend: Aumentar stock global en catálogo (tabla products)
+            // Ingeniería de Backend: Aumentar el stock en el producto base (inventory = false)
             let prodError = false;
             for (const item of cart) {
-                const { data: prodData } = await _supabase
+                // Filtrar en JS para no depender del tipo de la columna inventory (boolean o texto)
+                const { data: candidatos } = await _supabase
                     .from('products')
-                    .select('unit')
-                    .eq('code', item.code)
-                    .maybeSingle();
+                    .select('id, weigth, inventory')
+                    .eq('base_code', item.code);
 
-                if (prodData) {
-                    const newGlobalStock = (prodData.unit || 0) + item.quantity;
+                const baseProd = (candidatos || []).find(p => p.inventory !== true && p.inventory !== 'true');
+
+                if (baseProd) {
+                    const newWeigth = { ...(baseProd.weigth || {}) };
+                    Object.entries(item.quantities || {}).forEach(([medit, qty]) => {
+                        newWeigth[medit] = (newWeigth[medit] || 0) + qty;
+                    });
                     const { error: updErr } = await _supabase
                         .from('products')
-                        .update({ unit: newGlobalStock })
-                        .eq('code', item.code);
-                    
+                        .update({ weigth: newWeigth })
+                        .eq('id', baseProd.id);
                     if (updErr) prodError = true;
                 }
             }
@@ -1178,7 +1292,23 @@ async function liquidarVenta() {
                 showToast("Compra liquidada y catálogo actualizado exitosamente");
                 generatePDFInvoice(pdfData);
             }
-            initSalesProcess();
+
+            // Registrar movimientos de entrada (compras)
+            for (const item of cart) {
+                await _supabase.from('movements').insert([{
+                    name: item.name,
+                    type: 'ingreso',
+                    amount: item.quantities,
+                    farm: selectedFarm,
+                    shed: null,
+                    date_movement: timestamp.split(' ')[0],
+                    provider: item.providerName || '',
+                    description: `compra de ${item.name}`,
+                    created_at: timestamp
+                }]);
+            }
+
+            resetSalesAfterLiquidation();
         }
     }
 }
@@ -1224,9 +1354,9 @@ function generatePDFInvoice(data) {
     if (data.type === 'compra') headers[0].splice(2, 0, "Proveedor");
 
     const body = data.items.map(item => {
-        const qtyText = item.quantities && item.pricingUnit && item.quantities[item.pricingUnit] !== undefined
-            ? `${formatNumber(item.quantities[item.pricingUnit])} ${item.pricingUnit}`
-            : (item.quantities ? Object.entries(item.quantities).map(([medit, qty]) => `${formatNumber(qty)} ${medit}`).join(' / ') : formatNumber(item.quantity || 0));
+        const qtyText = item.quantities && Object.keys(item.quantities).length > 0
+            ? Object.entries(item.quantities).map(([medit, qty]) => `${formatNumber(qty)} ${medit}`).join(' / ')
+            : formatNumber(item.quantity || 0);
         const row = [item.code, item.name, qtyText, `$ ${formatNumber(item.price)}`, `$ ${formatNumber(item.total)}` ];
         if (data.type === 'compra') row.splice(2, 0, item.providerName);
         return row;
@@ -1472,7 +1602,6 @@ function showModal(id) {
     document.getElementById('modalOverlay').classList.remove('hidden');
     document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
-    if(id === 'modalCreateSupplier') loadProductsForSelect();
 }
 
 // Bloqueo de cierre por clic fuera para modal de selección de entidades
@@ -1576,15 +1705,6 @@ document.getElementById('unitPriceInput')?.addEventListener('input', function(e)
 
 // --- Ingeniería de Soporte para Formularios Maestros ---
 
-/**
- * Carga la lista de productos existentes para el selector múltiple del proveedor
- */
-async function loadProductsForSelect() {
-    const { data } = await _supabase.from('products').select('name');
-    const select = document.getElementById('supProducts');
-    if (select) select.innerHTML = data?.map(p => `<option value="${p.name}">${p.name}</option>`).join('') || '';
-}
-
 // Formateo de precios en tiempo real para los modales maestros
 ['prodBuyPrice', 'prodSalePrice'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', function(e) {
@@ -1605,7 +1725,10 @@ document.getElementById('formCreateSupplier')?.addEventListener('submit', async 
     const supplierData = {
         name: document.getElementById('supName').value,
         nit: parseInt(document.getElementById('supNit').value),
-        product: Array.from(document.getElementById('supProducts').selectedOptions).map(opt => opt.value),
+        product: document.getElementById('supProducts').value
+            .split(',')
+            .map(s => s.trim())
+            .filter(s => s.length > 0),
         created_at: getColombiaTimestamp()
     };
     const { error } = await _supabase.from('providers').insert([supplierData]);
