@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="../estilos.css">
     <link rel="stylesheet" href="informes.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
     <div id="informesWorkspace">
@@ -21,7 +22,6 @@
                 <button id="btnInformeCompras" class="nav-btn" style="background: #0984e3;">Compras</button>
                 <button id="btnInformeVentas" class="nav-btn" style="background: #e17055;">Ventas</button>
                 <button id="btnInformePeso" class="nav-btn" style="background: #6c5ce7;">Peso Ent/Sal</button>
-                <button id="btnInformeUnidades" class="nav-btn" style="background: #fdcb6e; color: #2d3436;">Unidades Ent/Sal</button>
             </div>
             <div style="display: flex; align-items: center; gap: 15px;">
                 <button onclick="window.location.href='../index.html'" class="nav-btn btn-cancel" style="margin: 0; padding: 5px 12px; font-size: 12px;">Volver al Inicio</button>
@@ -48,6 +48,7 @@
                     <label>Hasta:</label>
                     <input type="date" id="gananciasDateEnd">
                     <button class="action-btn" onclick="generarInformeGanancias()">Generar Informe</button>
+                    <button id="btnDescargarGanancias" class="action-btn hidden" onclick="exportCurrentTableToExcel('informe_ganancias.xlsx', 'Ganancias')">Descargar Excel</button>
                 </div>
                 <div id="gananciasResultContainer" class="table-container"></div>
             </section>
@@ -67,6 +68,7 @@
                     <label>Hasta:</label>
                     <input type="date" id="comprasDateEnd">
                     <button class="action-btn" onclick="generarInformeCompras()">Generar Informe</button>
+                    <button id="btnDescargarCompras" class="action-btn hidden" onclick="exportCurrentTableToExcel('informe_compras.xlsx', 'Compras')">Descargar Excel</button>
                 </div>
                 <div id="comprasResultContainer" class="table-container"></div>
             </section>
@@ -86,6 +88,7 @@
                     <label>Hasta:</label>
                     <input type="date" id="ventasDateEnd">
                     <button class="action-btn" onclick="generarInformeVentas()">Generar Informe</button>
+                    <button id="btnDescargarVentas" class="action-btn hidden" onclick="exportCurrentTableToExcel('informe_ventas.xlsx', 'Ventas')">Descargar Excel</button>
                 </div>
                 <div id="ventasResultContainer" class="table-container"></div>
             </section>
@@ -105,27 +108,9 @@
                     <label>Hasta:</label>
                     <input type="date" id="pesoDateEnd">
                     <button class="action-btn" onclick="generarInformePeso()">Generar Informe</button>
+                    <button id="btnDescargarPeso" class="action-btn hidden" onclick="exportCurrentTableToExcel('informe_peso.xlsx', 'Peso Ent/Sal')">Descargar Excel</button>
                 </div>
                 <div id="pesoResultContainer" class="table-container"></div>
-            </section>
-
-            <section id="informeUnidadesView" class="view-section hidden">
-                <div class="view-header">
-                    <h3>Informe de Unidades de Entrada y Salida</h3>
-                </div>
-                <div class="filter-section">
-                    <label>Producto:</label>
-                    <select id="unidadesProductSelect">
-                        <option value="todos">Todos</option>
-                        <option value="">Cargando productos...</option>
-                    </select>
-                    <label>Desde:</label>
-                    <input type="date" id="unidadesDateStart">
-                    <label>Hasta:</label>
-                    <input type="date" id="unidadesDateEnd">
-                    <button class="action-btn" onclick="generarInformeUnidades()">Generar Informe</button>
-                </div>
-                <div id="unidadesResultContainer" class="table-container"></div>
             </section>
         </main>
     </div>

@@ -61,6 +61,54 @@ const showToast = (message, type = 'success') => {
     setTimeout(() => { toast.remove(); }, 3000);
 };
 
+window.exportCurrentTableToExcel = function(fileName, sheetName) {
+    const activeTable = document.querySelector('.view-section:not(.hidden) .table-container table');
+    if (!activeTable) {
+        showToast('No se encontró una tabla visible para exportar', 'error');
+        return;
+    }
+
+    const rows = Array.from(activeTable.querySelectorAll('tbody tr'));
+    if (!rows.length) {
+        showToast('No hay datos para exportar', 'error');
+        return;
+    }
+
+    const headers = Array.from(activeTable.querySelectorAll('thead th')).map(th => th.textContent.trim());
+    const data = rows.map(tr => Array.from(tr.querySelectorAll('td')).map(td => {
+        const text = td.textContent.trim();
+        return isNaN(text) ? text : Number(text.replace(/[^0-9.-]/g, ''));
+    }));
+
+    let finalData = [headers, ...data];
+
+    const activeContainer = document.querySelector('.view-section:not(.hidden) .table-container');
+    if (activeContainer) {
+        const cards = activeContainer.querySelectorAll('.resumen-card');
+        if (cards.length) {
+            const resumenRows = [['Resumen']];
+            let hasResumen = false;
+            cards.forEach(card => {
+                const label = card.querySelector('.resumen-label')?.textContent.trim();
+                const value = card.querySelector('.resumen-value')?.textContent.trim();
+                if (label && value) {
+                    resumenRows.push([label, value]);
+                    hasResumen = true;
+                }
+            });
+            if (hasResumen) {
+                resumenRows.push([]);
+                finalData = [...resumenRows, headers, ...data];
+            }
+        }
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(finalData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Informe');
+    XLSX.writeFile(wb, fileName);
+};
+
 function switchView(viewId) {
     document.getElementById('welcomeInformes').classList.add('hidden');
     document.querySelectorAll('.view-section').forEach(sec => sec.classList.add('hidden'));
@@ -85,11 +133,6 @@ document.getElementById('btnInformeVentas')?.addEventListener('click', () => {
 document.getElementById('btnInformePeso')?.addEventListener('click', () => {
     switchView('informePesoView');
     loadProductFilters('pesoProductSelect');
-});
-
-document.getElementById('btnInformeUnidades')?.addEventListener('click', () => {
-    switchView('informeUnidadesView');
-    loadProductFilters('unidadesProductSelect');
 });
 
 async function loadProductFilters(selectId) {
@@ -241,11 +284,12 @@ async function generarInformeGanancias() {
                         `).join('')}
                     </tbody>
                 </table>
-            ` : '<p style="color: #636e72;">No hay datos para el rango seleccionado</p>'}
+             ` : '<p style="color: #636e72;">No hay datos para el rango seleccionado</p>'}
         </div>
     `;
 
     container.innerHTML = html;
+    document.getElementById('btnDescargarGanancias')?.classList.toggle('hidden', rows.length === 0);
 }
 
 // ==========================================
@@ -360,6 +404,7 @@ async function generarInformeCompras() {
     `;
 
     container.innerHTML = html;
+    document.getElementById('btnDescargarCompras')?.classList.toggle('hidden', rows.length === 0);
 }
 
 // ==========================================
@@ -472,6 +517,7 @@ async function generarInformeVentas() {
     `;
 
     container.innerHTML = html;
+    document.getElementById('btnDescargarVentas')?.classList.toggle('hidden', rows.length === 0);
 }
 
 // ==========================================
@@ -599,131 +645,6 @@ async function generarInformePeso() {
     `;
 
     container.innerHTML = html;
+    document.getElementById('btnDescargarPeso')?.classList.toggle('hidden', rows.length === 0);
 }
 
-// ==========================================
-// INFORME DE UNIDADES DE ENTRADA Y SALIDA
-// ==========================================
-async function generarInformeUnidades() {
-    const container = document.getElementById('unidadesResultContainer');
-    const producto = document.getElementById('unidadesProductSelect').value;
-    const start = document.getElementById('unidadesDateStart').value;
-    const end = document.getElementById('unidadesDateEnd').value;
-
-    container.innerHTML = '<p style="padding: 20px; text-align: center;">Cargando datos...</p>';
-
-    let query = _supabase
-        .from('movements')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-    const { data: movements, error } = await query;
-
-    if (error) {
-        container.innerHTML = `<p style="padding: 20px; color: #d63031;">Error: ${error.message}</p>`;
-        return;
-    }
-
-    let filtered = movements || [];
-    if (producto && producto !== 'todos') {
-        filtered = filtered.filter(m => m.name === producto);
-    }
-    if (start) filtered = filtered.filter(m => {
-        const fecha = (m.date_movement || m.created_at || '').split(' ')[0];
-        return fecha >= start;
-    });
-    if (end) filtered = filtered.filter(m => {
-        const fecha = (m.date_movement || m.created_at || '').split(' ')[0];
-        return fecha <= end;
-    });
-
-    if (filtered.length === 0) {
-        container.innerHTML = '<p style="padding: 20px; text-align: center; color: #636e72;">No hay movimientos para el filtro seleccionado</p>';
-        return;
-    }
-
-    const groups = {};
-    let totalEntrada = 0;
-    let totalSalida = 0;
-
-    filtered.forEach(m => {
-        const esIngreso = m.type === 'ingreso' || m.type === 'ingreso_animal';
-        const fecha = (m.date_movement || m.created_at || '').split(' ')[0];
-        const key = `${m.name}|${fecha}`;
-
-        if (!groups[key]) {
-            groups[key] = { producto: m.name, fecha, entrada: {}, salida: {} };
-        }
-
-        const amountObj = filterAmountByType(normalizeAmount(m.amount), 'unidad');
-        const target = esIngreso ? groups[key].entrada : groups[key].salida;
-
-        Object.entries(amountObj).forEach(([medida, valor]) => {
-            target[medida] = (target[medida] || 0) + valor;
-            if (esIngreso) totalEntrada += valor;
-            else totalSalida += valor;
-        });
-    });
-
-    const rows = Object.values(groups).map(g => {
-        const medidas = [...new Set([...Object.keys(g.entrada), ...Object.keys(g.salida)])];
-        const saldoObj = {};
-        medidas.forEach(m => {
-            const ent = g.entrada[m] || 0;
-            const sal = g.salida[m] || 0;
-            if (ent !== 0 || sal !== 0) saldoObj[m] = ent - sal;
-        });
-        return {
-            producto: g.producto,
-            fecha: g.fecha,
-            entrada: formatAmountJsonb(g.entrada) || '-',
-            salida: formatAmountJsonb(g.salida) || '-',
-            saldo: formatAmountJsonb(saldoObj) || '-'
-        };
-    });
-
-    rows.sort((a, b) => a.fecha.localeCompare(b.fecha));
-
-    const html = `
-        <div style="padding: 20px;">
-            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; justify-content: center;">
-                <div class="resumen-card positivo">
-                    <div class="resumen-label">Total Entradas</div>
-                    <div class="resumen-value">${formatNumber(totalEntrada)} und</div>
-                </div>
-                <div class="resumen-card negativo">
-                    <div class="resumen-label">Total Salidas</div>
-                    <div class="resumen-value">${formatNumber(totalSalida)} und</div>
-                </div>
-                <div class="resumen-card ${(totalEntrada - totalSalida) >= 0 ? 'positivo' : 'negativo'}">
-                    <div class="resumen-label">Saldo</div>
-                    <div class="resumen-value">${formatNumber(totalEntrada - totalSalida)} und</div>
-                </div>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Producto</th>
-                        <th>Fecha</th>
-                        <th>Entrada</th>
-                        <th>Salida</th>
-                        <th>Saldo</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows.map(r => `
-                        <tr>
-                            <td>${r.producto}</td>
-                            <td>${r.fecha}</td>
-                            <td style="color: #00b894; font-weight: bold;">${r.entrada}</td>
-                            <td style="color: #d63031; font-weight: bold;">${r.salida}</td>
-                            <td class="text-saldo">${r.saldo}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>
-    `;
-
-    container.innerHTML = html;
-}

@@ -304,12 +304,14 @@ async function initWorkspace(role) {
     if (profile) {
         window.CURRENT_USER_FARM = profile.farm;
         const profileInfo = document.getElementById('userProfileInfo');
-        profileInfo.innerHTML = `
-            <div style="text-align: left; line-height: 1.2; font-size: 13px; border-left: 1px solid #4b4b4b; padding-left: 15px; margin-left: 15px;">
-                <div style="color: #00b894; font-weight: bold;">Granja: ${profile.farm || 'Todas'}</div>
-                <div style="color: #ffffff;">Usuario: ${profile.name}</div>
-            </div>
-        `;
+        if (profileInfo) {
+            profileInfo.innerHTML = `
+                <div style="text-align: left; line-height: 1.2; font-size: 13px; border-left: 1px solid #4b4b4b; padding-left: 15px; margin-left: 15px;">
+                    <div style="color: #00b894; font-weight: bold;">Granja: ${profile.farm || 'Todas'}</div>
+                    <div style="color: #ffffff;">Usuario: ${profile.name}</div>
+                </div>
+            `;
+        }
     }
 
     if (role === 'Usuario') {

@@ -279,7 +279,7 @@
             <button type="button" class="close-modal" onclick="closeModals(false)">&times;</button>
             <h4>Definición de Productos</h4>
             <div class="action-bar" style="justify-content: flex-end; margin-bottom: 15px;">
-                <button class="action-btn" onclick="openNewProductModal()">Definir Nuevo Producto</button>
+                <button class="action-btn" onclick="if(typeof openNewProductModal==='function'){openNewProductModal();}else{showModal('modalCreateProduct');}">Definir Nuevo Producto</button>
             </div>
             <div id="baseProductsListContainer" class="table-container" style="max-height: 60vh; overflow-y: auto;">
                 <!-- Contenido dinámico de la tabla de productos base -->
