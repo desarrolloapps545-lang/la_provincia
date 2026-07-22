@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facturación - Granjas la provincia</title>
+    <title>Facturación la provincia</title>
+    <link rel="icon" type="image/png" href="../image/logo_provincia.png">
     <link rel="stylesheet" href="facturacion.css">
     <!-- Carga de Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -14,8 +15,9 @@
 <body>
     <div id="facturacionWorkspace">
         <nav class="status-bar">
-            <div style="display: flex; align-items: center;">
-                <div class="nav-brand">Facturación v1.0</div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <img src="../image/logo_provincia.png" alt="Logo" style="height: 45px; width: auto;">
+                <div class="nav-brand">Gestión la provincia</div>
             </div>
             <div class="nav-actions">
                 <button id="btnFacturacion" class="nav-btn">Facturación</button>
@@ -283,6 +285,10 @@
                 <div id="priceEditContainer" class="hidden" style="margin-top: 10px;">
                     <label style="font-size: 12px; color: #636e72;">Precio de Compra:</label>
                     <input type="text" id="unitPriceInput" placeholder="$ 0">
+                </div>
+                <div id="salePriceEditContainer" class="hidden" style="margin-top: 10px;">
+                    <label style="font-size: 12px; color: #636e72;">Precio de Venta:</label>
+                    <input type="text" id="salePriceInput" placeholder="$ 0">
                 </div>
                 <!-- Contenedor para la Proyección de Precio (FASE 10.4) -->
                 <div id="salePriceProjection" class="hidden" style="margin-top: 15px; padding: 10px; background: #f1f3f5; border-radius: 6px; text-align: center; font-weight: bold; color: #2d3436;">

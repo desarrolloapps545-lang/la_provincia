@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Informes - Granjas la provincia</title>
+    <title>Informes la provincia</title>
+    <link rel="icon" type="image/png" href="../image/logo_provincia.png">
     <link rel="stylesheet" href="../estilos.css">
     <link rel="stylesheet" href="informes.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -11,8 +12,9 @@
 <body>
     <div id="informesWorkspace">
         <nav class="status-bar">
-            <div style="display: flex; align-items: center;">
-                <div class="nav-brand">Informes v1.0</div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <img src="../image/logo_provincia.png" alt="Logo" style="height: 45px; width: auto;">
+                <div class="nav-brand">Gestión la provincia</div>
             </div>
             <div class="nav-actions">
                 <button id="btnInformeGanancias" class="nav-btn" style="background: #00b894;">Ganancias</button>
@@ -36,6 +38,11 @@
                     <h3>Informe de Ganancias</h3>
                 </div>
                 <div class="filter-section">
+                    <label>Producto:</label>
+                    <select id="gananciasProductSelect">
+                        <option value="todos">Todos</option>
+                        <option value="">Cargando productos...</option>
+                    </select>
                     <label>Desde:</label>
                     <input type="date" id="gananciasDateStart">
                     <label>Hasta:</label>
@@ -50,6 +57,11 @@
                     <h3>Informe de Compras</h3>
                 </div>
                 <div class="filter-section">
+                    <label>Producto:</label>
+                    <select id="comprasProductSelect">
+                        <option value="todos">Todos</option>
+                        <option value="">Cargando productos...</option>
+                    </select>
                     <label>Desde:</label>
                     <input type="date" id="comprasDateStart">
                     <label>Hasta:</label>
@@ -64,6 +76,11 @@
                     <h3>Informe de Ventas</h3>
                 </div>
                 <div class="filter-section">
+                    <label>Producto:</label>
+                    <select id="ventasProductSelect">
+                        <option value="todos">Todos</option>
+                        <option value="">Cargando productos...</option>
+                    </select>
                     <label>Desde:</label>
                     <input type="date" id="ventasDateStart">
                     <label>Hasta:</label>
@@ -79,7 +96,10 @@
                 </div>
                 <div class="filter-section">
                     <label>Producto:</label>
-                    <select id="pesoProductSelect"><option value="">Cargando productos...</option></select>
+                    <select id="pesoProductSelect">
+                        <option value="todos">Todos</option>
+                        <option value="">Cargando productos...</option>
+                    </select>
                     <label>Desde:</label>
                     <input type="date" id="pesoDateStart">
                     <label>Hasta:</label>
@@ -95,7 +115,10 @@
                 </div>
                 <div class="filter-section">
                     <label>Producto:</label>
-                    <select id="unidadesProductSelect"><option value="">Cargando productos...</option></select>
+                    <select id="unidadesProductSelect">
+                        <option value="todos">Todos</option>
+                        <option value="">Cargando productos...</option>
+                    </select>
                     <label>Desde:</label>
                     <input type="date" id="unidadesDateStart">
                     <label>Hasta:</label>

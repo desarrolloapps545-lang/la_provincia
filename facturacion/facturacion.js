@@ -796,11 +796,11 @@ async function addToCart(code) {
     const weigthKeys = prod.weigth && typeof prod.weigth === 'object'
         ? Object.keys(prod.weigth)
         : [];
-    
+
     let salePriceInfo = {};
     let pricingUnitDefault = null;
     if (isVenta && productPendingToCart.sale_price) {
-        if (typeof productPendingToCart.sale_price === 'object') {
+        if (typeof productPendingToCart.sale_price === 'object' && productPendingToCart.sale_price !== null) {
             salePriceInfo = productPendingToCart.sale_price;
             const spKeys = Object.keys(salePriceInfo);
             if (spKeys.length === 1) {
@@ -814,7 +814,7 @@ async function addToCart(code) {
 
     const hasMultipleSalePrices = Object.keys(salePriceInfo).length > 1;
 
-    if (weigthKeys.length > 0) {
+    if (weigthKeys.includes('KG')) { // Simplificado: la lógica principal se activa si existe la medida KG.
         if (singleQtyLabel) singleQtyLabel.classList.add('hidden');
         if (singleQtyInput) singleQtyInput.classList.add('hidden');
 
@@ -822,13 +822,13 @@ async function addToCart(code) {
 
         // Mostrar inputs para TODAS las medidas del weigth (venta y compra)
         qtyInputsContainer.innerHTML = weigthKeys.map(medit => `
-            <div style="flex: 1;">
+            <div style="flex: 1;" class="${medit !== 'KG' ? 'hidden' : ''}">
                 <label style="font-size: 12px; color: #636e72;">Cantidad en ${medit} a ${isVenta ? 'vender' : 'comprar'}:</label>
                 <input type="number" class="sale-qty-input" data-medit="${medit}" placeholder="0" data-max="${isVenta ? (prod.weigth[medit] || 0) : ''}" step="any" min="0">
                 ${isVenta && prod.weigth[medit] ? `<div style="font-size: 11px; color: #636e72; text-align: right;">Disp: ${formatNumber(prod.weigth[medit] || 0)}</div>` : ''}
             </div>
         `).join('');
-
+        
         if (isVenta) {
             // Radios solo si hay múltiples precios por medida
             if (hasMultipleSalePrices && pricingUnitSelector) {
@@ -836,7 +836,7 @@ async function addToCart(code) {
                 pricingUnitSelector.innerHTML = `
                     <label style="font-size: 12px; color: #636e72; font-weight: bold;">Calcular precio basado en:</label>
                     <div style="display: flex; gap: 15px; margin-top: 5px;">
-                    ${weigthKeys.map((medit, index) => {
+                    ${Object.keys(salePriceInfo).map((medit, index) => {
                         const priceText = salePriceInfo[medit]
                             ? ` ($${formatNumber(salePriceInfo[medit])})`
                             : '';
@@ -859,7 +859,7 @@ async function addToCart(code) {
 
             const updateProjection = () => {
                 const selectedRadio = document.querySelector('input[name="pricingUnit"]:checked');
-                const pricingUnit = selectedRadio ? selectedRadio.value : (pricingUnitDefault || weigthKeys[0]);
+                const pricingUnit = selectedRadio ? selectedRadio.value : (pricingUnitDefault || 'KG');
                 const qtyInput = document.querySelector(`.sale-qty-input[data-medit="${pricingUnit}"]`);
                 const quantity = parseFloat(qtyInput?.value) || 0;
                 const salePrice = salePriceInfo[pricingUnit] || 0;
@@ -897,28 +897,15 @@ async function addToCart(code) {
             updateProjection();
         } else {
             // COMPRA: mostrar inputs de TODAS las medidas y permitir elegir la medida de cálculo
-            if (pricingUnitSelector) {
-                pricingUnitSelector.classList.remove('hidden');
-                pricingUnitSelector.innerHTML = `
-                    <label style="font-size: 12px; color: #636e72; font-weight: bold;">Medida de compra (cálculo):</label>
-                    <div style="display: flex; gap: 15px; margin-top: 5px;">
-                    ${weigthKeys.map((medit, index) => `
-                        <label style="display: flex; align-items: center; gap: 5px; font-size: 14px;">
-                            <input type="radio" name="pricingUnit" value="${medit}" ${index === 0 ? 'checked' : ''}>
-                            ${medit}
-                        </label>
-                    `).join('')}
-                    </div>
-                `;
-            }
+            pricingUnitSelector.classList.add('hidden'); // Ocultamos el selector de unidad de precio
 
             // Inputs de cantidad para TODAS las medidas del producto
-            qtyInputsContainer.innerHTML = weigthKeys.map(medit => `
+            qtyInputsContainer.innerHTML = `
                 <div style="flex: 1;">
                     <label style="font-size: 12px; color: #636e72;">Cantidad en ${medit} a comprar:</label>
                     <input type="number" class="sale-qty-input" data-medit="${medit}" placeholder="0" step="any" min="0">
                 </div>
-            `).join('');
+            `.replace(/\{medit\}/g, 'KG'); // Forzamos a que sea KG
 
             projectionContainer.classList.remove('hidden');
 
@@ -932,7 +919,6 @@ async function addToCart(code) {
             };
 
             document.querySelectorAll('.sale-qty-input').forEach(input => input.addEventListener('input', updateCompraProjection));
-            pricingUnitSelector?.querySelectorAll('input[name="pricingUnit"]').forEach(r => r.addEventListener('change', updateCompraProjection));
             document.getElementById('unitPriceInput')?.addEventListener('input', updateCompraProjection);
             updateCompraProjection();
         }
@@ -961,6 +947,22 @@ async function addToCart(code) {
     if (isVenta) {
         priceEditContainer.classList.add('hidden');
         providerContainer.classList.add('hidden');
+        
+        const salePriceEditContainer = document.getElementById('salePriceEditContainer');
+        const salePriceInput = document.getElementById('salePriceInput');
+        
+        if (salePriceEditContainer && salePriceInput) {
+            salePriceEditContainer.classList.remove('hidden');
+            if (productPendingToCart.sale_price && typeof productPendingToCart.sale_price === 'object') {
+                const spKeys = Object.keys(productPendingToCart.sale_price);
+                const firstKey = spKeys[0] || 'KG';
+                salePriceInput.value = formatNumber(productPendingToCart.sale_price[firstKey] || 0);
+            } else if (typeof productPendingToCart.sale_price === 'number') {
+                salePriceInput.value = formatNumber(productPendingToCart.sale_price || 0);
+            } else {
+                salePriceInput.value = '';
+            }
+        }
 
         // Validar que la cantidad no exceda el stock para cada input dinámico
         document.querySelectorAll('.sale-qty-input').forEach(input => {
@@ -1025,7 +1027,7 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
     // Determinar si hay multi-medida (venta y compra)
     const weigthKeys = productPendingToCart.weigth && typeof productPendingToCart.weigth === 'object'
         ? Object.keys(productPendingToCart.weigth)
-        : [];
+        : ['KG']; // Fallback a KG
     
     let salePriceInfo = {};
     let pricingUnitDefault = null;
@@ -1036,13 +1038,13 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
             if (spKeys.length === 1) {
                 pricingUnitDefault = spKeys[0];
             }
-        } else if (typeof productPendingToCart.sale_price === 'number') {
+        } else if (typeof productPendingToCart.sale_price === 'number' || productPendingToCart.sale_price === null) {
             pricingUnitDefault = weigthKeys[0] || (Array.isArray(productPendingToCart.medit) ? productPendingToCart.medit[0] : productPendingToCart.medit) || 'Unidad';
             salePriceInfo = { [pricingUnitDefault]: productPendingToCart.sale_price };
         }
     } else if (!isVenta && weigthKeys.length > 0) {
         // En compras el precio se edita manualmente; usamos la primera medida como unidad de referencia
-        pricingUnitDefault = weigthKeys[0];
+        pricingUnitDefault = 'KG';
     }
 
     if (weigthKeys.length > 0) {
@@ -1099,16 +1101,22 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
         providerNit = pSelect.options[pSelect.selectedIndex].dataset.nit;
     } 
 
-    // En compras permitimos editar el precio, en ventas usamos el sale_price fijo
+    // En ventas permitimos editar el precio de venta; en compras usamos el precio manual
     let unitPrice;
+    let newSalePrice = null;
     if (isVenta) {
-        // Obtener el precio según la unidad seleccionada o por defecto
-        if (productPendingToCart.sale_price && typeof productPendingToCart.sale_price === 'object') {
-            unitPrice = salePriceInfo[pricingUnit] || 0;
-        } else if (typeof productPendingToCart.sale_price === 'number') {
-            unitPrice = productPendingToCart.sale_price || 0;
+        const salePriceInput = document.getElementById('salePriceInput');
+        if (salePriceInput && !salePriceInput.classList.contains('hidden')) {
+            newSalePrice = parseInt((salePriceInput.value || '').replace(/\./g, '')) || 0;
+            unitPrice = newSalePrice;
         } else {
-            unitPrice = 0;
+            if (productPendingToCart.sale_price && typeof productPendingToCart.sale_price === 'object') {
+                unitPrice = salePriceInfo[pricingUnit] || 0;
+            } else if (typeof productPendingToCart.sale_price === 'number') {
+                unitPrice = productPendingToCart.sale_price || 0;
+            } else {
+                unitPrice = 0;
+            }
         }
     } else {
         unitPrice = parseInt(document.getElementById('unitPriceInput').value.replace(/\D/g, '')) || 0;
@@ -1144,7 +1152,8 @@ document.getElementById('formAddQty')?.addEventListener('submit', async (e) => {
             total: quantityForPriceCalc * unitPrice,
             providerName: providerName,
             providerNit: providerNit,
-            shed: shedSelect?.value || null
+            shed: shedSelect?.value || null,
+            newSalePrice: isVenta ? newSalePrice : null
         });
     }
     updateCartUI();
@@ -1324,6 +1333,43 @@ async function liquidarVenta() {
                 showToast("Venta liquidada");
             }
 
+            // Ingeniería de Backend: Actualizar precio de venta si fue editado durante la venta
+            for (const item of cart) {
+                if (item.newSalePrice && item.newSalePrice > 0) {
+                    const salePriceUpdate = { sale_price: item.newSalePrice };
+
+                    const { data: candidatosBase } = await _supabase
+                        .from('products')
+                        .select('id')
+                        .eq('base_code', item.code)
+                        .eq('inventory', false)
+                        .limit(1);
+
+                    const baseProd = (candidatosBase || [])[0];
+                    if (baseProd) {
+                        const { error: updBasePriceErr } = await _supabase
+                            .from('products')
+                            .update(salePriceUpdate)
+                            .eq('id', baseProd.id);
+                        if (updBasePriceErr) console.error('Error actualizando precio base:', updBasePriceErr);
+                    }
+
+                    const { data: invProds } = await _supabase
+                        .from('products')
+                        .select('id')
+                        .eq('inventory_code', item.code)
+                        .eq('inventory', true);
+
+                    for (const invP of invProds || []) {
+                        const { error: updInvPriceErr } = await _supabase
+                            .from('products')
+                            .update(salePriceUpdate)
+                            .eq('id', invP.id);
+                        if (updInvPriceErr) console.error('Error actualizando precio inventario:', updInvPriceErr);
+                    }
+                }
+            }
+
             // Registrar movimientos de salida (ventas)
             for (const item of cart) {
                 await _supabase.from('movements').insert([{
@@ -1432,7 +1478,13 @@ function generatePDFInvoice(data) {
     doc.text(`NIT: ${f.nit} | Tel: ${f.phone}`, 105, 27, { align: "center" });
     doc.text(`Correo: ${f.email}`, 105, 33, { align: "center" });
     doc.text(`Comprobante de ${data.type.toUpperCase()} No. ${data.invoice_number}`, 105, 39, { align: "center" });
-
+    
+    try {
+        doc.addImage('../image/logo_provincia.png', 'PNG', 15, 10, 25, 25);
+    } catch (e) {
+        console.warn('No se pudo cargar el logo en el PDF:', e);
+    }
+    
     doc.setDrawColor(200);
     doc.line(15, 45, 195, 45);
 

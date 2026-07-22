@@ -377,32 +377,41 @@ function showModal(id) {
     const form = modal.querySelector('form');
     if (form) {
         const isEdit = form.dataset.mode === 'edit';
-        if (id === 'modalCreateProduct' || id === 'modalCreateFarm' || (!isEdit && id !== 'modalEditShed')) {
+        if (!isEdit && (id === 'modalCreateProduct' || id === 'modalCreateFarm' || (id !== 'modalEditShed' && id !== 'modalQuickBuy' && id !== 'modalEditInventory'))) {
             form.reset();
             delete form.dataset.mode;
             delete form.dataset.originalId;
+        }
+        
+        // Restaurar textos originales por defecto (tanto crear como editar)
+        const title = modal.querySelector('h4');
+        const submitBtn = form.querySelector('button[type="submit"]');
+        
+        if (id === 'modalCreateFarm') { title.textContent = "Nueva Granja"; submitBtn.textContent = "Guardar"; }
+        if (id === 'modalCreateSupplier') { title.textContent = "Nuevo Proveedor"; submitBtn.textContent = "Guardar"; }
+        
+        // Configurar modal de producto (tanto para crear como para editar)
+        if (id === 'modalCreateProduct') { 
+            const isProductEdit = form.dataset.mode === 'edit';
             
-            // Restaurar textos originales por defecto
-            const title = modal.querySelector('h4');
-            const submitBtn = form.querySelector('button[type="submit"]');
-            if (id === 'modalCreateFarm') { title.textContent = "Nueva Granja"; submitBtn.textContent = "Guardar"; }
-            if (id === 'modalCreateSupplier') { title.textContent = "Nuevo Proveedor"; submitBtn.textContent = "Guardar"; }
-            if (id === 'modalCreateProduct') { 
-                title.textContent = "Nuevo Producto"; 
-                submitBtn.textContent = "Guardar"; 
-                // Generar código automáticamente al abrir para nuevo producto (definición)
+            title.textContent = isProductEdit ? "Editar Producto" : "Nuevo Producto"; 
+            submitBtn.textContent = isProductEdit ? "Actualizar Producto" : "Guardar"; 
+            
+            // Generar código automáticamente al abrir para nuevo producto (definición)
+            if (!isProductEdit) {
                 generateNextProductCode().then(code => {
                     document.getElementById('prodCode').value = code;
                 });
-                document.getElementById('prodTotalProjection').textContent = "$ 0";
-                
-                // Resetear campos de peso y animales
+            }
+            document.getElementById('prodTotalProjection').textContent = "$ 0";
+            
+            // Resetear campos de peso y animales solo al crear
+            if (!isProductEdit) {
                 const checkWeight = document.getElementById('prodHasWeight');
                 if (checkWeight) {
                     checkWeight.checked = false;
                     document.getElementById('prodWeightContainer').classList.add('hidden');
                 }
-                const isAnimalCheck = document.getElementById('prodIsAnimal');
                 const forSaleCheck = document.getElementById('prodForSale');
                 if (forSaleCheck) {
                     forSaleCheck.checked = true;
@@ -1277,7 +1286,7 @@ document.getElementById('btnGestionGranjas').addEventListener('click', async () 
     document.getElementById('inventoryView')?.classList.add('hidden');
     const farmsView = document.getElementById('farmsView');
     farmsView.classList.remove('hidden');
-    
+
     const tableContainer = document.getElementById('farmsTableContainer');
     tableContainer.innerHTML = "<p style='padding:20px;'>Cargando datos de granjas...</p>";
 
@@ -1501,6 +1510,7 @@ async function renderBaseProducts() {
                         <td>
                             <div style="display:flex; gap:5px;">
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editProduct('${p.base_code}')">Editar</button>
+                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #00b894;" onclick="openQuickBuyForProduct('${p.base_code}')">Comprar</button>
                                 <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteProduct('${p.base_code}')">Borrar</button>
                             </div>
                         </td>
@@ -1583,10 +1593,10 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
     const buyPrice = parseInt(document.getElementById('prodBuyPrice').value.replace(/\./g, '')) || 0;
     const hasWeight = document.getElementById('prodHasWeight')?.checked;
     const toSale = document.getElementById('prodForSale')?.checked !== false;
-    const provider = document.getElementById('prodProvider')?.value || "";
 
     if (!isEdit) {
         const baseCode = document.getElementById('prodCode').value;
+        if (!baseCode) return showToast("Error: No se pudo generar un código de producto.", "error");
         const { data: existing, error: checkError } = await _supabase
             .from('products')
             .select('base_code')
@@ -1603,42 +1613,27 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
         name: document.getElementById('prodName').value,
         buy_price: buyPrice,
         total: unit * buyPrice,
-        animal: false,
+        animal: document.getElementById('prodIsAnimal')?.checked || false,
         to_sale: toSale,
-        provider: provider ? [provider] : []
+        provider: [] // El proveedor ya no se define a nivel de producto base
     };
 
     // FASE 11: Lógica para guardar precios de venta en JSONB
-    const selectedMedit = document.getElementById('prodMedit').value;
     if (toSale) {
-        if (hasWeight) {
-            const priceUnit = parseInt(document.getElementById('prodSalePrice').value.replace(/\./g, '')) || 0;
-            const priceKg = parseInt(document.getElementById('prodSalePriceKg').value.replace(/\./g, '')) || 0;
-            productData.sale_price = { [selectedMedit]: priceUnit, 'KG': priceKg };
-        } else {
-            const priceUnit = parseInt(document.getElementById('prodSalePrice').value.replace(/\./g, '')) || 0;
-            productData.sale_price = { [selectedMedit]: priceUnit };
-        }
+        const priceKg = parseInt(document.getElementById('prodSalePriceKg').value.replace(/\./g, '')) || 0;
+        productData.sale_price = { 'KG': priceKg };
     } else {
         productData.sale_price = null;
     }
 
     // Nueva lógica para `medit` (array) y `weigth` (jsonb)
-    productData.medit = [selectedMedit];
-    productData.unit = unit; // `unit` sigue siendo la cantidad principal
-
-    if (hasWeight) {
-        productData.medit.push('KG');
-        productData.weigth = {
-            [selectedMedit]: unit,
-            'KG': parseFloat(document.getElementById('prodWeight').value) || 0
-        };
-    } else {
-        productData.weigth = null;
-    }
+    productData.medit = ['KG'];
+    productData.unit = 0; // El campo unit ya no representa la cantidad principal, se usa weigth
+    productData.weigth = { 'KG': unit };
 
     let result;
     if (isEdit) {
+        delete productData.base_code; // No se puede actualizar la clave primaria
         const originalId = form.dataset.originalId;
         // Determinar si estamos editando una definición (por base_code) o un item de inventario (por id)
         const isInventoryItem = form.dataset.isInventory === 'true';
@@ -1649,6 +1644,36 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
         productData.inventory = false; // Nuevo producto es una definición, no está en inventario
         productData.created_at = getColombiaTimestamp();
         result = await _supabase.from('products').insert([productData]);
+
+        // Si la creación del producto fue exitosa y no es una edición, registrar la compra inicial
+        if (!result.error && unit > 0 && buyPrice > 0) {
+            const timestamp = getColombiaTimestamp();
+            const { count: buyCount } = await _supabase.from('buys').select('*', { count: 'exact', head: true });
+            const invoice_number = `BASE-${String((buyCount || 0) + 1).padStart(6, '0')}`;
+
+            const buyData = {
+                invoice_number: invoice_number,
+                product: [productData.name],
+                code: [productData.base_code],
+                product_value: [productData.buy_price],
+                provider: ['Inventario Inicial'],
+                nit: [0],
+                total_payed: productData.total,
+                payment_method: 'Inventario Inicial',
+                change: 0,
+                amount: [productData.weigth],
+                medit: ['KG'],
+                created_at: timestamp
+            };
+
+            const { error: buyError } = await _supabase.from('buys').insert([buyData]);
+
+            if (buyError) {
+                console.error("Error al registrar la compra inicial:", buyError);
+                // No detenemos el flujo, pero sí informamos del problema secundario.
+                showToast("Producto creado, pero no se pudo registrar el egreso inicial.", "error");
+            }
+        }
     }
 
     const { error } = result;
@@ -1663,6 +1688,81 @@ document.getElementById('formCreateProduct')?.addEventListener('submit', async (
         else renderBaseProducts();
     }
 });
+
+document.getElementById('formQuickBuy')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const baseCode = document.getElementById('qbBaseCode').value;
+    const providerSelect = document.getElementById('qbProvider');
+    const provider = providerSelect.value;
+    const providerNit = parseInt(providerSelect.options[providerSelect.selectedIndex].dataset.nit || '0');
+    const amount = parseFloat(document.getElementById('qbAmount').value) || 0;
+    const priceRaw = (document.getElementById('qbPrice').value || '').replace(/\./g, '');
+    const price = parseInt(priceRaw) || 0;
+
+    if (!baseCode) return showToast("Error: producto no válido", "error");
+    if (amount <= 0) return showToast("Ingrese una cantidad mayor a 0", "error");
+    if (price <= 0) return showToast("Ingrese un precio mayor a 0", "error");
+
+    const { count: buyCount } = await _supabase.from('buys').select('*', { count: 'exact', head: true });
+    const invoice_number = `BASE-${String((buyCount || 0) + 1).padStart(6, '0')}`;
+
+    const buyData = {
+        invoice_number,
+        product: [document.getElementById('qbProductName').value],
+        code: [baseCode],
+        product_value: [price],
+        provider: provider ? [provider] : [''],
+        nit: [provider ? providerNit : 0],
+        total_payed: amount * price,
+        payment_method: 'Efectivo',
+        change: 0,
+        amount: [{ 'KG': amount }],
+        medit: 'KG',
+        created_at: getColombiaTimestamp()
+    };
+
+    console.log('QuickBuy payload:', JSON.stringify(buyData, null, 2));
+
+    const { error: buyError } = await _supabase.from('buys').insert([buyData]);
+    if (buyError) {
+        console.error('QuickBuy error:', buyError);
+        showToast("Error al registrar compra: " + (buyError.message || buyError.details || 'Error desconocido'), "error");
+        return;
+    }
+
+    const { data: candidatos } = await _supabase
+        .from('products')
+        .select('id, weigth, inventory')
+        .eq('base_code', baseCode);
+
+    const baseProd = (candidatos || []).find(p => p.inventory !== true && p.inventory !== 'true');
+
+    if (baseProd) {
+        const newWeigth = { ...(baseProd.weigth || {}) };
+        newWeigth['KG'] = (newWeigth['KG'] || 0) + amount;
+        const { error: updErr } = await _supabase
+            .from('products')
+            .update({ weigth: newWeigth })
+            .eq('id', baseProd.id);
+        if (updErr) showToast("Compra registrada, error al actualizar catálogo", "error");
+        else showToast("Compra registrada y catálogo actualizado");
+    } else {
+        showToast("Compra registrada");
+    }
+
+    closeModals();
+    renderBaseProducts();
+});
+
+const updateQuickBuyTotal = () => {
+    const amount = parseFloat(document.getElementById('qbAmount').value) || 0;
+    const price = parseInt(document.getElementById('qbPrice').value.replace(/\./g, '')) || 0;
+    const total = amount * price;
+    document.getElementById('qbTotalCost').value = total > 0 ? `$ ${formatNumber(total)}` : '$ 0';
+};
+
+document.getElementById('qbAmount')?.addEventListener('input', updateQuickBuyTotal);
+document.getElementById('qbPrice')?.addEventListener('input', updateQuickBuyTotal);
 
 async function loadFarmsForProductModal() {
     const farmSelect = document.getElementById('prodAnimalFarm');
@@ -1972,32 +2072,20 @@ window.editProduct = async (code) => {
     form.dataset.mode = 'edit';
     form.dataset.originalId = code;
     showModal('modalCreateProduct');
-    document.querySelector('#modalCreateProduct h4').textContent = "Editar Producto";
-    document.querySelector('#formCreateProduct button[type="submit"]').textContent = "Actualizar Producto";
 
     document.getElementById('prodName').value = data.name;
-    document.getElementById('prodMedit').value = Array.isArray(data.medit) ? data.medit[0] : data.medit;
-    document.getElementById('prodUnit').value = data.unit;
+    document.getElementById('prodUnit').value = data.weigth?.KG || data.unit || 0;
     document.getElementById('prodBuyPrice').value = formatNumber(data.buy_price);
     
-    const salePriceInput = document.getElementById('prodSalePrice');
+    const salePriceKgInput = document.getElementById('prodSalePriceKg');
     if (typeof data.sale_price === 'object' && data.sale_price !== null) {
-        const selectedMedit = Array.isArray(data.medit) ? data.medit[0] : data.medit;
-        salePriceInput.value = formatNumber(data.sale_price[selectedMedit] || data.sale_price['KG'] || Object.values(data.sale_price)[0] || 0);
+        salePriceKgInput.value = formatNumber(data.sale_price['KG'] || 0);
     } else {
-        salePriceInput.value = formatNumber(data.sale_price);
-    }
-
-    // Poblar campos de peso
-    const hasWeight = data.weigth !== null;
-    const checkWeight = document.getElementById('prodHasWeight');
-    if (checkWeight) {
-        checkWeight.checked = hasWeight;
-        document.getElementById('prodWeightContainer').classList.toggle('hidden', !hasWeight);
-        document.getElementById('prodWeight').value = hasWeight ? (data.weigth.KG || 0) : "";
+        salePriceKgInput.value = formatNumber(data.sale_price || 0);
     }
 
     const forSaleCheck = document.getElementById('prodForSale');
+    const isAnimalCheck = document.getElementById('prodIsAnimal');
     if (forSaleCheck) {
         forSaleCheck.checked = data.to_sale !== false; // true por defecto
         updateSalePriceVisibility();
@@ -2005,12 +2093,74 @@ window.editProduct = async (code) => {
 
     document.getElementById('prodCode').value = data.base_code;
     await prepareProviderSelect();
-    const providerSelect = document.getElementById('prodProvider');
-    if (providerSelect) {
-        const providerArray = Array.isArray(data.provider) ? data.provider : [];
-        providerSelect.value = providerArray[0] || "";
-    }
+    
     updateProductTotalProjection();
+    // Simular cambio para actualizar visibilidad de precios
+    if (isAnimalCheck) isAnimalCheck.dispatchEvent(new Event('change'));
+};
+
+window.openNewProductModal = function() {
+    const form = document.getElementById('formCreateProduct');
+    if (form) {
+        form.dataset.mode = '';
+        delete form.dataset.originalId;
+    }
+    showModal('modalCreateProduct');
+};
+
+window.openQuickBuyForProduct = async function(baseCode) {
+    const { data: product, error } = await _supabase
+        .from('products')
+        .select('base_code, name, buy_price, weigth')
+        .eq('base_code', baseCode)
+        .eq('inventory', false)
+        .single();
+
+    console.log('QuickBuy product load:', { baseCode, product, error });
+
+    if (error || !product) return showToast("Error al cargar producto", "error");
+
+    const nameInput = document.getElementById('qbProductName');
+    const priceInput = document.getElementById('qbPrice');
+    const stockInput = document.getElementById('qbCurrentStock');
+    const totalInput = document.getElementById('qbTotalCost');
+    const amountInput = document.getElementById('qbAmount');
+    const providerSelect = document.getElementById('qbProvider');
+
+    const productName = product.name || product.base_code || 'Producto';
+    const currentStock = (product.weigth && typeof product.weigth === 'object' && product.weigth['KG']) ? product.weigth['KG'] : 0;
+
+    if (nameInput) nameInput.value = productName;
+    if (document.getElementById('qbBaseCode')) document.getElementById('qbBaseCode').value = product.base_code;
+    if (priceInput) priceInput.value = product.buy_price ? formatNumber(product.buy_price) : formatNumber(0);
+    if (amountInput) amountInput.value = '';
+    if (stockInput) stockInput.value = `${formatNumber(currentStock)} KG`;
+    if (totalInput) totalInput.value = '$ 0';
+
+    const { data: providers } = await _supabase.from('providers').select('name, nit').order('name');
+    if (providerSelect) {
+        providerSelect.innerHTML = '<option value="" disabled selected hidden>Seleccione proveedor (opcional)</option>' +
+            (providers?.map(p => `<option value="${p.name}" data-nit="${p.nit || 0}">${p.name}</option>`).join('') || '');
+    }
+
+    const modal = document.getElementById('modalQuickBuy');
+    const overlay = document.getElementById('modalOverlay');
+    const currentOpen = document.querySelector('.modal:not(.hidden)');
+    if (currentOpen && currentOpen.id !== 'modalQuickBuy') {
+        modalStack.push(currentOpen.id);
+        currentOpen.classList.add('hidden');
+    }
+    if (overlay) overlay.classList.remove('hidden');
+    if (modal) modal.classList.remove('hidden');
+
+    setTimeout(() => {
+        console.log('QuickBuy DOM after open:', {
+            name: document.getElementById('qbProductName')?.value,
+            price: document.getElementById('qbPrice')?.value,
+            stock: document.getElementById('qbCurrentStock')?.value,
+            modalHidden: document.getElementById('modalQuickBuy')?.classList.contains('hidden')
+        });
+    }, 50);
 };
 
 window.editShed = async (farm, number) => {
@@ -3384,7 +3534,7 @@ document.getElementById('formOutboundAnimal')?.addEventListener('submit', async 
 });
 
 // Ingeniería de Sistemas: Helper para actualizar la proyección de stock global en tiempo real
-const updateEditInventoryStockProjection = () => {
+function updateEditInventoryStockProjection() {
     const form = document.getElementById('formEditInventory');
     if (!form || form.dataset.mode !== 'edit') return;
 
