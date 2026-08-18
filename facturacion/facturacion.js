@@ -1282,16 +1282,18 @@ async function liquidarVenta() {
 
                 const newWeigth = { ...(invItem.weigth || {}) };
                 Object.entries(item.quantities || {}).forEach(([medit, qty]) => {
-                    const currentStock = newWeigth[medit] || 0;
+                    const currentStock = parseFloat(newWeigth[medit] || 0);
+                    const saleQty = parseFloat(qty || 0);
                     if (qty > currentStock) {
                         newWeigth[medit] = 0; // Si se vende más de lo disponible, el stock queda en 0.
                     } else {
-                        newWeigth[medit] = currentStock - qty;
+                        newWeigth[medit] = parseFloat((currentStock - saleQty).toFixed(3));
                     }
                 });
 
                 const shedJson = normalizeShed(invItem.shed);
                 if (item.shed && shedJson[item.shed]) {
+                    // La lógica de Math.max(0, ...) ya previene negativos y no necesita redondeo extra aquí.
                     Object.entries(item.quantities || {}).forEach(([medit, qty]) => {
                         shedJson[item.shed][medit] = Math.max(0, (shedJson[item.shed][medit] || 0) - qty);
                     });
@@ -1427,7 +1429,8 @@ async function liquidarVenta() {
                 if (baseProd) {
                     const newWeigth = { ...(baseProd.weigth || {}) };
                     Object.entries(item.quantities || {}).forEach(([medit, qty]) => {
-                        newWeigth[medit] = (newWeigth[medit] || 0) + qty;
+                        const currentStock = parseFloat(newWeigth[medit] || 0);
+                        newWeigth[medit] = parseFloat((currentStock + parseFloat(qty || 0)).toFixed(3));
                     });
                     const { error: updErr } = await _supabase
                         .from('products')

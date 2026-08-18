@@ -150,7 +150,8 @@ async function loadMovements(productName, farmName) {
 
         Object.entries(amountObj).forEach(([medida, valor]) => {
             if (!saldoPorMedida[medida]) saldoPorMedida[medida] = 0;
-            saldoPorMedida[medida] += esIngreso ? valor : -valor;
+            const change = esIngreso ? parseFloat(valor || 0) : -parseFloat(valor || 0);
+            saldoPorMedida[medida] = parseFloat((saldoPorMedida[medida] + change).toFixed(3));
         });
 
         const saldoTxt = formatAmountJsonb(saldoPorMedida);

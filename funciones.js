@@ -975,7 +975,8 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
     } else {
         const newWeigth = { ...(currentProd.weigth || {}) };
         Object.entries(weigthData).forEach(([medit, value]) => {
-            newWeigth[medit] = (newWeigth[medit] || 0) + value;
+            const currentStock = parseFloat(newWeigth[medit] || 0);
+            newWeigth[medit] = parseFloat((currentStock + parseFloat(value || 0)).toFixed(3));
         });
 
         const shedJson = normalizeShed(currentProd.shed);
@@ -983,7 +984,8 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
             const key = String(shedValue);
             if (!shedJson[key]) shedJson[key] = {};
             Object.entries(weigthData).forEach(([medit, value]) => {
-                shedJson[key][medit] = (shedJson[key][medit] || 0) + value;
+                const currentShedStock = parseFloat(shedJson[key][medit] || 0);
+                shedJson[key][medit] = parseFloat((currentShedStock + parseFloat(value || 0)).toFixed(3));
             });
         }
 
@@ -1004,7 +1006,8 @@ document.getElementById('formInboundInventory')?.addEventListener('submit', asyn
     } else {
         const newBaseWeigth = { ...(pData.weigth || {}) };
         Object.entries(weigthData).forEach(([medit, value]) => {
-            newBaseWeigth[medit] = Math.max(0, (newBaseWeigth[medit] || 0) - value);
+            const currentBaseStock = parseFloat(newBaseWeigth[medit] || 0);
+            newBaseWeigth[medit] = Math.max(0, parseFloat((currentBaseStock - parseFloat(value || 0)).toFixed(3)));
         });
         await _supabase.from('products').update({ weigth: newBaseWeigth }).eq('base_code', baseCode).eq('inventory', false);
 
@@ -1212,13 +1215,15 @@ document.getElementById('formOutboundInventory')?.addEventListener('submit', asy
 
     const newWeigth = { ...(currentProd.weigth || {}) };
     Object.entries(weigthData).forEach(([medit, value]) => {
-        newWeigth[medit] = (newWeigth[medit] || 0) - value;
+        const currentStock = parseFloat(newWeigth[medit] || 0);
+        newWeigth[medit] = parseFloat((currentStock - parseFloat(value || 0)).toFixed(3));
     });
 
     const shedJson = normalizeShed(currentProd.shed);
     if (shedValue && shedJson[shedValue]) {
         Object.entries(weigthData).forEach(([medit, value]) => {
-            shedJson[shedValue][medit] = (shedJson[shedValue][medit] || 0) - value;
+            const currentShedStock = parseFloat(shedJson[shedValue][medit] || 0);
+            shedJson[shedValue][medit] = parseFloat((currentShedStock - parseFloat(value || 0)).toFixed(3));
         });
         if (Object.values(shedJson[shedValue]).every(v => v <= 0)) {
             delete shedJson[shedValue];

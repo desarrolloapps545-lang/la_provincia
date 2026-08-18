@@ -206,7 +206,7 @@ button:hover {
 .table-container {
     background: white;
     box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    overflow: hidden;
+    overflow-x: auto; /* Permite el desplazamiento horizontal si el contenido es muy ancho */
     border-radius: 0;
     border: 2px solid #000;
 }

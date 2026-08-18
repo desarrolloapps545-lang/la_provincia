@@ -214,9 +214,9 @@ async function generarInformeGanancias() {
         productos.forEach((nombre) => {
             const key = `${nombre}|${fecha}`;
             if (!groups[key]) groups[key] = { producto: nombre, fecha: timestamp, venta: 0, compra: 0 };
-            const valor = getProductAmount(s);
-            groups[key].venta += valor;
-            totalVentas += valor;
+            const valor = parseFloat(getProductAmount(s).toFixed(3));
+            groups[key].venta = parseFloat((groups[key].venta + valor).toFixed(3));
+            totalVentas = parseFloat((totalVentas + valor).toFixed(3));
         });
     });
 
@@ -224,13 +224,12 @@ async function generarInformeGanancias() {
         const fecha = c.created_at ? c.created_at.split(' ')[0] : '';
         const timestamp = c.created_at || '';
         const productos = Array.isArray(c.product) ? c.product : [];
-        
         productos.forEach((nombre) => {
             const key = `${nombre}|${fecha}`;
             if (!groups[key]) groups[key] = { producto: nombre, fecha: timestamp, venta: 0, compra: 0 };
-            const valor = getProductAmount(c);
-            groups[key].compra += valor;
-            totalCompras += valor;
+            const valor = parseFloat(getProductAmount(c).toFixed(3));
+            groups[key].compra = parseFloat((groups[key].compra + valor).toFixed(3));
+            totalCompras = parseFloat((totalCompras + valor).toFixed(3));
         });
     });
 
@@ -241,7 +240,7 @@ async function generarInformeGanancias() {
         compra: g.compra
     }));
 
-    rows.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.producto.localeCompare(b.producto));
+    rows.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || a.producto.localeCompare(b.producto));
 
     const gananciaNeta = totalVentas - totalCompras;
 
@@ -249,41 +248,43 @@ async function generarInformeGanancias() {
         <div style="padding: 20px;">
             <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; justify-content: center;">
                 <div class="resumen-card positivo">
-                    <div class="resumen-label">Total Ingresos (Ventas)</div>
+                    <div class="resumen-label">Total Ventas</div>
                     <div class="resumen-value">$ ${formatNumber(totalVentas)}</div>
                 </div>
                 <div class="resumen-card negativo">
-                    <div class="resumen-label">Total Egresos (Compras)</div>
+                    <div class="resumen-label">Total Compras</div>
                     <div class="resumen-value">$ ${formatNumber(totalCompras)}</div>
                 </div>
                 <div class="resumen-card ${gananciaNeta >= 0 ? 'positivo' : 'negativo'}">
-                    <div class="resumen-label">Ganancia Neta</div>
+                    <div class="resumen-label">Ganancia Total</div>
                     <div class="resumen-value">$ ${formatNumber(gananciaNeta)}</div>
                 </div>
             </div>
 
             <h4 style="margin-bottom: 15px; color: #2d3436;">Ventas y Compras por Producto y Fecha</h4>
             ${rows.length > 0 ? `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Producto</th>
-                            <th>Fecha</th>
-                            <th>Venta</th>
-                            <th>Compra</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows.map(r => `
+                <div class="table-container">
+                    <table>
+                        <thead>
                             <tr>
-                                <td>${r.producto}</td>
-                                <td>${format12h(r.fecha)}</td>
-                                <td style="color: #00b894; font-weight: bold;">$ ${formatNumber(r.venta)}</td>
-                                <td style="color: #d63031; font-weight: bold;">$ ${formatNumber(r.compra)}</td>
+                                <th>Producto</th>
+                                <th>Fecha</th>
+                                <th>Venta</th>
+                                <th>Compra</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${rows.map(r => `
+                                <tr>
+                                    <td>${r.producto}</td>
+                                    <td>${format12h(r.fecha)}</td>
+                                    <td style="color: #00b894; font-weight: bold;">$ ${formatNumber(r.venta)}</td>
+                                    <td style="color: #d63031; font-weight: bold;">$ ${formatNumber(r.compra)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
              ` : '<p style="color: #636e72;">No hay datos para el rango seleccionado</p>'}
         </div>
     `;
@@ -326,26 +327,30 @@ async function generarInformeCompras() {
     const rows = filtered.map(buy => {
         const productos = buy.product || [];
         const valores = buy.product_value || [];
+        // Normaliza 'medit' para que siempre sea un array de strings, incluso si viene como un string JSON.
+        let medits = [];
+        try {
+            medits = typeof buy.medit === 'string' ? JSON.parse(buy.medit) : (buy.medit || []);
+            if (!Array.isArray(medits)) medits = [medits];
+        } catch (e) {
+            medits = Array.isArray(buy.medit) ? buy.medit : [buy.medit];
+        }
         const proveedores = buy.provider || [];
         const total = buy.total_payed || 0;
 
-        const productosDetalle = productos.map((p, i) => {
-            let meditValue = '';
-            if (buy.medit) {
-                if (Array.isArray(buy.medit)) {
-                    meditValue = buy.medit[i] || '';
-                } else {
-                    meditValue = buy.medit;
-                }
-            }
-            return `${p} ${meditValue} $${formatNumber(valores[i] || 0)}`;
-        }).join(', ');
+        const productosDetalle = productos.map((p, i) => `${p}`).join(', ');
+
+        const preciosDetalle = valores.map((val, i) => {
+            const unit = (Array.isArray(medits) ? medits[i] : medits) || 'KG';
+            return `$ ${formatNumber(val)} / ${unit || 'Unidad'}`;
+        }).join('<br>');
 
         const cantidades = (buy.amount && Array.isArray(buy.amount))
             ? buy.amount.map(amt => {
-                return (amt && typeof amt === 'object')
-                    ? Object.entries(amt).map(([k, v]) => `${formatNumber(v)} ${k}`).join(' / ')
-                    : '-';
+                if (amt && typeof amt === 'object' && Object.keys(amt).length > 0) {
+                    return Object.entries(amt).map(([k, v]) => `${formatNumber(v)} ${k}`).join('<br>');
+                }
+                return '-';
             }).join('<br>')
             : '-';
 
@@ -354,6 +359,7 @@ async function generarInformeCompras() {
             fecha: format12h(buy.created_at),
             proveedores: [...new Set(proveedores)].join(', '),
             productos: productosDetalle || '-',
+            precios: preciosDetalle,
             cantidades: cantidades,
             total: total,
             metodo: buy.payment_method
@@ -374,32 +380,36 @@ async function generarInformeCompras() {
                     <div class="resumen-value">${rows.length}</div>
                 </div>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>No. Factura</th>
-                        <th>Fecha</th>
-                        <th>Proveedores</th>
-                        <th>Productos</th>
-                        <th>Cantidades</th>
-                        <th>Total</th>
-                        <th>Método de Pago</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows.map(r => `
+            <div class="table-container">
+                <table>
+                    <thead>
                         <tr>
-                            <td>${r.factura}</td>
-                            <td>${r.fecha}</td>
-                            <td>${r.proveedores}</td>
-                            <td>${r.productos}</td>
-                            <td>${r.cantidades}</td>
-                            <td>$ ${formatNumber(r.total)}</td>
-                            <td>${r.metodo}</td>
+                            <th>No. Factura</th>
+                            <th>Fecha</th>
+                            <th>Proveedores</th>
+                            <th>Productos</th>
+                            <th>Precio</th>
+                            <th>Cantidades</th>
+                            <th>Total</th>
+                            <th>Método de Pago</th>
                         </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        ${rows.map(r => `
+                            <tr>
+                                <td>${r.factura}</td>
+                                <td>${r.fecha}</td>
+                                <td>${r.proveedores}</td>
+                                <td>${r.productos}</td>
+                                <td>${r.precios}</td>
+                                <td>${r.cantidades}</td>
+                                <td>$ ${formatNumber(r.total)}</td>
+                                <td>${r.metodo}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
         </div>
     `;
 
@@ -441,22 +451,27 @@ async function generarInformeVentas() {
     const rows = filtered.map(sale => {
         const productos = sale.products || [];
         const valores = sale.products_value || [];
-        const productosDetalle = productos.map((p, i) => {
-            let meditValue = '';
-            if (sale.medit) {
-                if (Array.isArray(sale.medit)) {
-                    meditValue = sale.medit[i] || '';
-                } else {
-                    meditValue = sale.medit;
-                }
-            }
-            return `${p} ${meditValue} $${formatNumber(valores[i] || 0)}`;
-        }).join(', ');
+        // Normaliza 'medit' para que siempre sea un array de strings.
+        let medits = [];
+        try {
+            medits = typeof sale.medit === 'string' ? JSON.parse(sale.medit) : (sale.medit || []);
+            if (!Array.isArray(medits)) medits = [medits];
+        } catch (e) {
+            medits = Array.isArray(sale.medit) ? sale.medit : [sale.medit];
+        }
+        const productosDetalle = productos.map((p, i) => `${p}`).join(', ');
+
+        const preciosDetalle = valores.map((val, i) => {
+            const unit = (Array.isArray(medits) ? medits[i] : medits) || 'KG';
+            return `$ ${formatNumber(val)} / ${unit || 'Unidad'}`;
+        }).join('<br>');
+
         const cantidades = (sale.amount && Array.isArray(sale.amount))
             ? sale.amount.map(amt => {
-                return (amt && typeof amt === 'object')
-                    ? Object.entries(amt).map(([k, v]) => `${formatNumber(v)} ${k}`).join(' / ')
-                    : '-';
+                if (amt && typeof amt === 'object' && Object.keys(amt).length > 0) {
+                    return Object.entries(amt).map(([k, v]) => `${formatNumber(v)} ${k}`).join('<br>');
+                }
+                return '-';
             }).join('<br>')
             : '-';
         return {
@@ -464,6 +479,7 @@ async function generarInformeVentas() {
             fecha: format12h(sale.created_at),
             cliente: sale.client,
             productos: productosDetalle || '-',
+            precios: preciosDetalle,
             cantidades: cantidades,
             total: sale.total_to_pay || 0,
             metodo: sale.payment_method,
@@ -485,34 +501,38 @@ async function generarInformeVentas() {
                     <div class="resumen-value">${rows.length}</div>
                 </div>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>No. Factura</th>
-                        <th>Fecha</th>
-                        <th>Cliente</th>
-                        <th>Granja</th>
-                        <th>Productos</th>
-                        <th>Cantidades</th>
-                        <th>Total</th>
-                        <th>Método de Pago</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows.map(r => `
+            <div class="table-container">
+                <table>
+                    <thead>
                         <tr>
-                            <td>${r.factura}</td>
-                            <td>${r.fecha}</td>
-                            <td>${r.cliente}</td>
-                            <td>${r.granja}</td>
-                            <td>${r.productos}</td>
-                            <td>${r.cantidades}</td>
-                            <td>$ ${formatNumber(r.total)}</td>
-                            <td>${r.metodo}</td>
+                            <th>No. Factura</th>
+                            <th>Fecha</th>
+                            <th>Cliente</th>
+                            <th>Granja</th>
+                            <th>Productos</th>
+                            <th>Precio</th>
+                            <th>Cantidades</th>
+                            <th>Total</th>
+                            <th>Método de Pago</th>
                         </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        ${rows.map(r => `
+                            <tr>
+                                <td>${r.factura}</td>
+                                <td>${r.fecha}</td>
+                                <td>${r.cliente}</td>
+                                <td>${r.granja}</td>
+                                <td>${r.productos}</td>
+                                <td>${r.precios}</td>
+                                <td>${r.cantidades}</td>
+                                <td>$ ${formatNumber(r.total)}</td>
+                                <td>${r.metodo}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
         </div>
     `;
 
@@ -578,9 +598,9 @@ async function generarInformePeso() {
         const target = esIngreso ? groups[key].entrada : groups[key].salida;
 
         Object.entries(amountObj).forEach(([medida, valor]) => {
-            target[medida] = (target[medida] || 0) + valor;
-            if (esIngreso) totalEntrada += valor;
-            else totalSalida += valor;
+            target[medida] = parseFloat(((target[medida] || 0) + valor).toFixed(3));
+            if (esIngreso) totalEntrada = parseFloat((totalEntrada + valor).toFixed(3));
+            else totalSalida = parseFloat((totalSalida + valor).toFixed(3));
         });
     });
 
@@ -590,7 +610,7 @@ async function generarInformePeso() {
         medidas.forEach(m => {
             const ent = g.entrada[m] || 0;
             const sal = g.salida[m] || 0;
-            if (ent !== 0 || sal !== 0) saldoObj[m] = ent - sal;
+            if (ent !== 0 || sal !== 0) saldoObj[m] = parseFloat((ent - sal).toFixed(3));
         });
         return {
             producto: g.producto,
@@ -616,35 +636,36 @@ async function generarInformePeso() {
                 </div>
                 <div class="resumen-card ${(totalEntrada - totalSalida) >= 0 ? 'positivo' : 'negativo'}">
                     <div class="resumen-label">Saldo</div>
-                    <div class="resumen-value">${formatNumber(totalEntrada - totalSalida)} kg</div>
+                    <div class="resumen-value">${formatNumber(parseFloat((totalEntrada - totalSalida).toFixed(3)))} kg</div>
                 </div>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Producto</th>
-                        <th>Fecha</th>
-                        <th>Entrada</th>
-                        <th>Salida</th>
-                        <th>Saldo</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows.map(r => `
+            <div class="table-container">
+                <table>
+                    <thead>
                         <tr>
-                            <td>${r.producto}</td>
-                            <td>${r.fecha}</td>
-                            <td style="color: #00b894; font-weight: bold;">${r.entrada}</td>
-                            <td style="color: #d63031; font-weight: bold;">${r.salida}</td>
-                            <td class="text-saldo">${r.saldo}</td>
+                            <th>Producto</th>
+                            <th>Fecha</th>
+                            <th>Entrada</th>
+                            <th>Salida</th>
+                            <th>Saldo</th>
                         </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        ${rows.map(r => `
+                            <tr>
+                                <td>${r.producto}</td>
+                                <td>${r.fecha}</td>
+                                <td style="color: #00b894; font-weight: bold;">${r.entrada}</td>
+                                <td style="color: #d63031; font-weight: bold;">${r.salida}</td>
+                                <td class="text-saldo">${r.saldo}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
         </div>
     `;
 
     container.innerHTML = html;
     document.getElementById('btnDescargarPeso')?.classList.toggle('hidden', rows.length === 0);
 }
-
