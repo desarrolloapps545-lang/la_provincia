@@ -967,25 +967,9 @@ async function addToCart(code) {
         // Validar que la cantidad no exceda el stock para cada input dinámico
         document.querySelectorAll('.sale-qty-input').forEach(input => {
             input.addEventListener('input', () => {
-                const max = parseFloat(input.dataset.max) || 0;
-                if (parseFloat(input.value) > max) {
-                    input.value = max;
-                    showToast("La cantidad no puede exceder el stock disponible.", "error");
-                }
+                // Se elimina la validación que limita la venta al stock disponible.
             });
         });
-
-        // Validar también el input único
-        // Ingeniería de Sistemas: Verificación de existencia del elemento para evitar error de null.
-        if (singleQtyInput) {
-            singleQtyInput.max = prod.amount;
-            singleQtyInput.addEventListener('input', () => {
-                if (parseFloat(singleQtyInput.value) > prod.amount) {
-                    singleQtyInput.value = prod.amount;
-                    showToast("La cantidad no puede exceder el stock disponible.", "error");
-                }
-            });
-        }
 
     } else {
         singleQtyInput?.removeAttribute('max');
@@ -1298,7 +1282,12 @@ async function liquidarVenta() {
 
                 const newWeigth = { ...(invItem.weigth || {}) };
                 Object.entries(item.quantities || {}).forEach(([medit, qty]) => {
-                    newWeigth[medit] = Math.max(0, (newWeigth[medit] || 0) - qty);
+                    const currentStock = newWeigth[medit] || 0;
+                    if (qty > currentStock) {
+                        newWeigth[medit] = 0; // Si se vende más de lo disponible, el stock queda en 0.
+                    } else {
+                        newWeigth[medit] = currentStock - qty;
+                    }
                 });
 
                 const shedJson = normalizeShed(invItem.shed);
