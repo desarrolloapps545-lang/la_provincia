@@ -576,6 +576,16 @@ async function generarInformePeso() {
         return fecha <= end;
     });
 
+    // El saldo debe incluir movimientos anteriores al inicio del filtro.
+    let balanceMovements = movements || [];
+    if (producto && producto !== 'todos') {
+        balanceMovements = balanceMovements.filter(m => m.name === producto);
+    }
+    if (end) balanceMovements = balanceMovements.filter(m => {
+        const fecha = (m.date_movement || m.created_at || '').split(' ')[0];
+        return fecha <= end;
+    });
+
     if (filtered.length === 0) {
         container.innerHTML = '<p style="padding: 20px; text-align: center; color: #636e72;">No hay movimientos para el filtro seleccionado</p>';
         return;
@@ -585,7 +595,7 @@ async function generarInformePeso() {
     let totalEntrada = 0;
     let totalSalida = 0;
 
-    filtered.forEach(m => {
+    balanceMovements.forEach(m => {
         const esIngreso = m.type === 'ingreso' || m.type === 'ingreso_animal';
         const fecha = (m.date_movement || m.created_at || '').split(' ')[0];
         const key = `${m.name}|${fecha}`;
@@ -604,13 +614,18 @@ async function generarInformePeso() {
         });
     });
 
-    const rows = Object.values(groups).map(g => {
+    const saldoPorProducto = {};
+    const rows = Object.values(groups).sort((a, b) => a.fecha.localeCompare(b.fecha)).map(g => {
         const medidas = [...new Set([...Object.keys(g.entrada), ...Object.keys(g.salida)])];
         const saldoObj = {};
+        if (!saldoPorProducto[g.producto]) saldoPorProducto[g.producto] = {};
         medidas.forEach(m => {
             const ent = g.entrada[m] || 0;
             const sal = g.salida[m] || 0;
-            if (ent !== 0 || sal !== 0) saldoObj[m] = parseFloat((ent - sal).toFixed(3));
+            const saldoAnterior = saldoPorProducto[g.producto][m] || 0;
+            const saldoActual = parseFloat((saldoAnterior + ent - sal).toFixed(3));
+            saldoPorProducto[g.producto][m] = saldoActual;
+            if (saldoActual !== 0) saldoObj[m] = saldoActual;
         });
         return {
             producto: g.producto,
@@ -619,7 +634,7 @@ async function generarInformePeso() {
             salida: formatAmountJsonb(g.salida) || '-',
             saldo: formatAmountJsonb(saldoObj) || '-'
         };
-    });
+    }).filter(row => !start || row.fecha >= start);
 
     rows.sort((a, b) => a.fecha.localeCompare(b.fecha));
 

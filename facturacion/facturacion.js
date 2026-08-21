@@ -407,7 +407,7 @@ async function loadInventoryForSales() {
                 weigth: item.weigth,
                 shed: item.shed
             };
-        }).filter(i => i.amount > 0);
+        });
     }
 
     // Obtención de información comercial de la tabla products
@@ -657,8 +657,8 @@ document.getElementById('inventorySalesList')?.addEventListener('click', (e) => 
 function renderInventorySales(items) {
     const list = document.getElementById('inventorySalesList');
     
-    // En compras no filtramos por stock
-    const availableItems = billingMode === 'venta' ? items.filter(item => item.amount > 0) : items;
+    // En ventas también se muestran productos agotados para permitir facturarlos.
+    const availableItems = items;
     currentSalesItems = availableItems;
 
     if (availableItems.length === 0) {
