@@ -202,43 +202,35 @@ async function generarInformeGanancias() {
         return;
     }
 
-    const groups = {};
     let totalVentas = 0;
     let totalCompras = 0;
 
-    ventasFiltradas.forEach(s => {
-        const fecha = s.created_at ? s.created_at.split(' ')[0] : '';
-        const timestamp = s.created_at || '';
-        const productos = Array.isArray(s.products) ? s.products : [];
-        
-        productos.forEach((nombre) => {
-            const key = `${nombre}|${fecha}`;
-            if (!groups[key]) groups[key] = { producto: nombre, fecha: timestamp, venta: 0, compra: 0 };
-            const valor = parseFloat(getProductAmount(s).toFixed(3));
-            groups[key].venta = parseFloat((groups[key].venta + valor).toFixed(3));
-            totalVentas = parseFloat((totalVentas + valor).toFixed(3));
-        });
+    // Cada registro representa un movimiento completo; sus productos se muestran juntos.
+    const ventasRows = ventasFiltradas.map(s => {
+        const valor = parseFloat(getProductAmount(s).toFixed(3));
+        const productos = Array.isArray(s.products) ? [...new Set(s.products)] : [];
+        totalVentas = parseFloat((totalVentas + valor).toFixed(3));
+        return {
+            producto: productos.join(', ') || '-',
+            fecha: s.created_at || '',
+            venta: valor,
+            compra: 0
+        };
     });
 
-    comprasFiltradas.forEach(c => {
-        const fecha = c.created_at ? c.created_at.split(' ')[0] : '';
-        const timestamp = c.created_at || '';
-        const productos = Array.isArray(c.product) ? c.product : [];
-        productos.forEach((nombre) => {
-            const key = `${nombre}|${fecha}`;
-            if (!groups[key]) groups[key] = { producto: nombre, fecha: timestamp, venta: 0, compra: 0 };
-            const valor = parseFloat(getProductAmount(c).toFixed(3));
-            groups[key].compra = parseFloat((groups[key].compra + valor).toFixed(3));
-            totalCompras = parseFloat((totalCompras + valor).toFixed(3));
-        });
+    const comprasRows = comprasFiltradas.map(c => {
+        const valor = parseFloat(getProductAmount(c).toFixed(3));
+        const productos = Array.isArray(c.product) ? [...new Set(c.product)] : [];
+        totalCompras = parseFloat((totalCompras + valor).toFixed(3));
+        return {
+            producto: productos.join(', ') || '-',
+            fecha: c.created_at || '',
+            venta: 0,
+            compra: valor
+        };
     });
 
-    const rows = Object.values(groups).map(g => ({
-        producto: g.producto,
-        fecha: g.fecha,
-        venta: g.venta,
-        compra: g.compra
-    }));
+    const rows = [...ventasRows, ...comprasRows];
 
     rows.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || a.producto.localeCompare(b.producto));
 
