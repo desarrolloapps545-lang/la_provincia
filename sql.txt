@@ -104,6 +104,45 @@ CREATE TABLE animal_production_records (
 -- POLÍTICAS DE SEGURIDAD (RLS)
 -- ==========================================================
 
+-- ==========================================================
+-- RLS PARA CENTROS DE COSTOS (farms)
+-- ==========================================================
+
+ALTER TABLE public.farms ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Permitir lectura de centros de costos a usuarios autenticados"
+ON public.farms FOR SELECT TO authenticated
+USING (true);
+
+CREATE POLICY "Permitir inserción de centros de costos a Admins y Devs"
+ON public.farms FOR INSERT TO authenticated
+WITH CHECK (EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid()
+      AND role IN ('Administrador', 'Desarrollador')
+));
+
+CREATE POLICY "Permitir actualización de centros de costos a Admins y Devs"
+ON public.farms FOR UPDATE TO authenticated
+USING (EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid()
+      AND role IN ('Administrador', 'Desarrollador')
+))
+WITH CHECK (EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid()
+      AND role IN ('Administrador', 'Desarrollador')
+));
+
+CREATE POLICY "Permitir eliminación de centros de costos a Admins y Devs"
+ON public.farms FOR DELETE TO authenticated
+USING (EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid()
+      AND role IN ('Administrador', 'Desarrollador')
+));
+
 -- Habilitar RLS en las nuevas tablas
 ALTER TABLE animal_batches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE animal_production_records ENABLE ROW LEVEL SECURITY;

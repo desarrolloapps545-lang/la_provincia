@@ -1331,8 +1331,8 @@ function renderFarmsTable(farms) {
                         <td>${Array.isArray(f.animals) && f.animals.length > 0 ? f.animals.join(', ') : 'No aplica'}</td>
                         <td>
                             <div style="display:flex; gap:5px;">
-                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editFarm('${f.name}')">Editar</button>
-                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteFarm('${f.name}')">Borrar</button>
+                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #0984e3;" onclick="editFarm(decodeURIComponent('${encodeURIComponent(f.name)}'))">Editar</button>
+                                <button class="action-btn" style="margin:0; padding:5px 10px; background: #d63031;" onclick="deleteFarm(decodeURIComponent('${encodeURIComponent(f.name)}'))">Borrar</button>
                             </div>
                         </td>
                     </tr>
@@ -2032,9 +2032,21 @@ window.editFarm = async (name) => {
 
 window.deleteFarm = async (name) => {
     if (!confirm(`¿Está seguro de eliminar la granja "${name}"? Esta acción no se puede deshacer.`)) return;
-    const { error } = await _supabase.from('farms').delete().eq('name', name);
-    if (error) showToast("Error: " + error.message, "error");
-    else { showToast("Granja eliminada"); document.getElementById('btnGestionGranjas').click(); }
+
+    const { data: deletedFarms, error } = await _supabase
+        .from('farms')
+        .delete()
+        .eq('name', name)
+        .select('name');
+
+    if (error) {
+        showToast("No se pudo eliminar la granja: " + error.message, "error");
+    } else if (!deletedFarms || deletedFarms.length === 0) {
+        showToast("La granja no fue eliminada. Verifique los permisos de eliminación (RLS) en Supabase.", "error");
+    } else {
+        showToast("Granja eliminada");
+        document.getElementById('btnGestionGranjas').click();
+    }
 };
 
 window.editSupplier = async (nit) => {
